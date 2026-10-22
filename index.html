@@ -246,7 +246,7 @@
     <div id="partnerFields" hidden>
       <div class="two">
         <div class="field"><label>סוג העבודה</label>
-          <select name="jobType"><option>מעקב</option><option>הפעלת מדובבים</option><option>עבודת מדובבים</option><option>אחר</option></select></div>
+          <select name="jobType"><option>מעקב</option><option>הפעלת מדובבים</option><option>אחר</option></select></div>
         <div class="field"><label>החלק שלי מהרווח (%)</label><input name="split" type="number" min="0" max="100" step="1"></div>
       </div>
     </div>
@@ -632,7 +632,7 @@ function openJob(jobId, partner) {
   partner = jobId ? !!inc.partner : !!partner;
   document.getElementById('partnerFields').hidden = !partner;
   document.getElementById('settledField').hidden = !partner;
-  e.jobType.value = inc.jobType || 'מעקב';
+  e.jobType.value = inc.jobType === 'עבודת מדובבים' ? 'הפעלת מדובבים' : inc.jobType || 'מעקב'; // הסוג "עבודת מדובבים" הוסר
   e.split.value = inc.split ?? 50;
   e.settled.checked = !!inc.settled;
   const defaults = lastRates();
