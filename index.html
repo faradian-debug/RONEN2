@@ -109,7 +109,7 @@
       <div class="bars" id="monthBars"></div>
     </div>
     <div class="card">
-      <h3 style="margin-top:0">הכנסות לפי לקוח</h3>
+      <h3 style="margin-top:0">הכנסות והוצאות לפי לקוח</h3>
       <div class="table-wrap"><table id="topCust"></table></div>
     </div>
   </section>
@@ -286,12 +286,22 @@ function renderDash() {
       </div>
     </div>`).join('');
 
-  const byCust = {};
-  txs.filter(t => t.type === 'income' && t.customerId).forEach(t => byCust[t.customerId] = (byCust[t.customerId] || 0) + t.amount);
-  const rows = Object.entries(byCust).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  const ids = [...new Set(txs.filter(t => t.customerId).map(t => t.customerId))];
+  const rows = ids.map(id => ({ id, ...custTotals(id, txs) })).sort((a, b) => b.profit - a.profit);
   document.getElementById('topCust').innerHTML = rows.length
-    ? '<tr><th>לקוח</th><th>הכנסות</th></tr>' + rows.map(([id, v]) => `<tr><td>${esc(custName(id))}</td><td class="num income">${money(v)}</td></tr>`).join('')
-    : '<tr><td class="empty">אין עדיין הכנסות משויכות ללקוחות בשנה זו</td></tr>';
+    ? '<tr><th>לקוח</th><th>הכנסות</th><th>הוצאות</th><th>רווח</th></tr>' + rows.map(r => `<tr>
+        <td><button class="link" onclick="showCustTx('${r.id}')">${esc(custName(r.id))}</button></td>
+        <td class="num income">${money(r.inc)}</td>
+        <td class="num expense">${money(r.exp)}</td>
+        <td class="num ${r.profit >= 0 ? 'income' : 'expense'}"><b>${money(r.profit)}</b></td>
+      </tr>`).join('')
+    : '<tr><td class="empty">אין עדיין תנועות משויכות ללקוחות בשנה זו</td></tr>';
+}
+function custTotals(id, txs = db.transactions) {
+  const mine = txs.filter(t => t.customerId === id);
+  const inc = mine.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+  const exp = mine.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+  return { inc, exp, profit: inc - exp };
 }
 document.getElementById('dashYear').onchange = renderDash;
 
@@ -302,15 +312,17 @@ function renderCust() {
     .sort((a, b) => a.name.localeCompare(b.name, 'he'));
   const t = document.getElementById('custTable');
   if (!list.length) { t.innerHTML = `<tr><td class="empty">${db.customers.length ? 'לא נמצאו לקוחות' : 'עדיין אין לקוחות. לחצו "+ לקוח חדש"'}</td></tr>`; return; }
-  t.innerHTML = '<tr><th>שם</th><th>טלפון</th><th>אימייל</th><th>כתובת</th><th>סה"כ הכנסות</th><th>הערות</th><th></th></tr>' +
+  t.innerHTML = '<tr><th>שם</th><th>טלפון</th><th>אימייל</th><th>כתובת</th><th>הכנסות</th><th>הוצאות</th><th>רווח</th><th>הערות</th><th></th></tr>' +
     list.map(c => {
-      const total = db.transactions.filter(x => x.customerId === c.id && x.type === 'income').reduce((s, x) => s + x.amount, 0);
+      const s = custTotals(c.id);
       return `<tr>
         <td><b>${esc(c.name)}</b></td>
         <td>${c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>` : ''}</td>
         <td>${c.email ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : ''}</td>
         <td>${esc(c.address)}</td>
-        <td class="num income">${money(total)}</td>
+        <td class="num income">${money(s.inc)}</td>
+        <td class="num expense">${money(s.exp)}</td>
+        <td class="num ${s.profit >= 0 ? 'income' : 'expense'}"><b>${money(s.profit)}</b></td>
         <td style="white-space:normal;max-width:220px">${esc(c.notes)}</td>
         <td><button class="link" onclick="showCustTx('${c.id}')">תנועות</button>
             <button class="link" onclick="openCust('${c.id}')">עריכה</button>
@@ -393,7 +405,8 @@ function openTx(type, id) {
   const f = document.getElementById('txForm'), x = db.transactions.find(t => t.id === id) || {};
   f.elements.date.value = x.date || new Date().toISOString().slice(0, 10);
   f.elements.amount.value = x.amount ?? '';
-  f.elements.customerId.innerHTML = custOptions(x.customerId || '', '— ללא —');
+  // תנועה חדשה בזמן שמסננים לפי לקוח – הלקוח נבחר מראש
+  f.elements.customerId.innerHTML = custOptions(id ? x.customerId : document.getElementById('fCust').value, '— ללא —');
   f.elements.category.value = x.category || '';
   f.elements.description.value = x.description || '';
   const used = db.transactions.filter(t => t.type === type).map(t => t.category).filter(Boolean);
