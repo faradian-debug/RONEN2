@@ -221,10 +221,7 @@
     <div id="trackerRows"></div>
     <datalist id="trackerList"></datalist>
     <button type="button" class="btn" id="addTrackerBtn" style="margin-bottom:12px">+ עוקב נוסף</button>
-    <div class="two">
-      <div class="field"><label>שעות</label><input name="hours" type="number" step="0.25" min="0"></div>
-      <div class="field"><label>ק"מ</label><input name="km" type="number" step="1" min="0"></div>
-    </div>
+    <div id="jobTotals" style="font-weight:600;margin-bottom:10px"></div>
     <div class="two">
       <div class="field"><label>הלקוח משלם – ₪ לשעה</label><input name="cHour" type="number" step="0.01" min="0"></div>
       <div class="field"><label>הלקוח משלם – ₪ לק"מ</label><input name="cKm" type="number" step="0.01" min="0"></div>
@@ -232,7 +229,7 @@
     <p id="clientRateHint" style="font-size:12px;color:var(--muted);margin:-4px 0 10px"></p>
     <div class="field"><label>הכנסה מהלקוח (₪) *</label><input name="income" type="number" step="0.01" min="0" required></div>
     <div id="jobProfit" style="font-weight:600"></div>
-    <p style="font-size:12px;color:var(--muted);margin:4px 0 10px">הסכומים מחושבים לפי שעות וק"מ. בעבודה במחיר קבוע משאירים שעות וק"מ ריקים ומקלידים את הסכומים.</p>
+    <p style="font-size:12px;color:var(--muted);margin:4px 0 10px">כל עוקב מקבל לפי השעות והק"מ שלו. הלקוח משלם לפי סך השעות והק"מ של כל העוקבים. בעבודה במחיר קבוע משאירים שעות וק"מ ריקים ומקלידים את הסכומים.</p>
     <div class="field"><label>הערה</label><input name="note"></div>
     <div class="actions">
       <button class="btn primary" value="save">שמירה</button>
@@ -514,6 +511,10 @@ function addTrackerRow(tr = {}) {
   row.innerHTML = `
     <div class="head"><span class="title"></span><button type="button" class="link danger remove">הסרה</button></div>
     <div class="field"><label>שם העוקב *</label><input class="tName" list="trackerList" required></div>
+    <div class="two">
+      <div class="field"><label>שעות שעבד</label><input class="wHours" type="number" step="0.25" min="0"></div>
+      <div class="field"><label>ק"מ במשמרת</label><input class="wKm" type="number" step="1" min="0"></div>
+    </div>
     <div class="three">
       <div class="field"><label>₪ לשעה</label><input class="tHour" type="number" step="0.01" min="0"></div>
       <div class="field"><label>₪ לק"מ</label><input class="tKm" type="number" step="0.01" min="0"></div>
@@ -523,6 +524,8 @@ function addTrackerRow(tr = {}) {
   const q = s => row.querySelector(s);
   const defaults = lastRates();
   q('.tName').value = tr.name || '';
+  q('.wHours').value = tr.hours ?? '';
+  q('.wKm').value = tr.km ?? '';
   q('.tHour').value = tr.tHour ?? defaults.tHour;
   q('.tKm').value = tr.tKm ?? defaults.tKm;
   q('.tCost').value = tr.cost ?? '';
@@ -536,7 +539,7 @@ function addTrackerRow(tr = {}) {
       q('.hint').textContent = name ? 'עוקב חדש – הזינו את התעריף שלו, והוא יישמר לפעם הבאה.' : '';
     }
   };
-  q('.tHour').oninput = q('.tKm').oninput = calcJob;
+  q('.tHour').oninput = q('.tKm').oninput = q('.wHours').oninput = q('.wKm').oninput = calcJob;
   q('.tCost').oninput = updateJobProfit;
   q('.remove').onclick = () => { row.remove(); renumberTrackers(); updateJobProfit(); };
   trackerRowsEl.appendChild(row);
@@ -550,9 +553,11 @@ function renumberTrackers() {
     r.querySelector('.remove').hidden = rows.length === 1;
   });
 }
+const optNum = el => el.value === '' ? null : num(el);
 function readTrackers() {
   return [...trackerRowsEl.children].map(r => ({
     name: r.querySelector('.tName').value.trim(),
+    hours: optNum(r.querySelector('.wHours')), km: optNum(r.querySelector('.wKm')),
     tHour: num(r.querySelector('.tHour')), tKm: num(r.querySelector('.tKm')),
     cost: round2(num(r.querySelector('.tCost')))
   }));
@@ -567,17 +572,16 @@ function openJob(jobId) {
   const defaults = lastRates();
   e.date.value = inc.date || today();
   e.customerId.innerHTML = custOptions(jobId ? inc.customerId : document.getElementById('fCust').value, '— בחרו לקוח —');
-  e.hours.value = inc.hours ?? '';
-  e.km.value = inc.km ?? '';
   e.cHour.value = inc.rates?.cHour ?? defaults.cHour;
   e.cKm.value = inc.rates?.cKm ?? defaults.cKm;
   e.income.value = inc.amount ?? '';
   e.note.value = inc.note || '';
 
-  // עבודות ישנות (עוקב יחיד) שמרו את התעריף ב-rates ואת השם ב-tracker
+  // עבודות ישנות (עוקב יחיד) שמרו את התעריף ב-rates ואת השם ב-tracker;
+  // עבודות ישנות יותר שמרו שעות וק"מ רק ברמת העבודה
   const trackers = inc.trackers || (jobId ? exps.map(x => ({ name: x.tracker, tHour: inc.rates?.tHour, tKm: inc.rates?.tKm, cost: x.amount })) : [{}]);
   trackerRowsEl.innerHTML = '';
-  trackers.forEach(addTrackerRow);
+  trackers.forEach(t => addTrackerRow(jobId && t.hours === undefined ? { ...t, hours: inc.hours, km: inc.km } : t));
 
   const names = [...new Set(db.transactions.filter(t => t.type === 'expense').map(t => t.tracker).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'he'));
   document.getElementById('trackerList').innerHTML = names.map(t => {
@@ -606,23 +610,32 @@ function applyClientRates() {
 }
 jobForm.elements.customerId.onchange = applyClientRates;
 
+// כל עוקב מקבל לפי השעות והק"מ שלו; הלקוח משלם לפי הסך של כל העוקבים.
+// בלי שעות וק"מ – מחיר קבוע שמוקלד ידנית
+const jobTotals = () => {
+  const ts = readTrackers();
+  return { ts, hours: round2(ts.reduce((s, t) => s + (t.hours || 0), 0)), km: round2(ts.reduce((s, t) => s + (t.km || 0), 0)),
+    any: ts.some(t => t.hours != null || t.km != null) };
+};
 function calcJob() {
   const e = jobForm.elements;
-  if (e.hours.value || e.km.value) { // בלי שעות וק"מ – מחיר קבוע שמוקלד ידנית
-    e.income.value = round2(num(e.hours) * num(e.cHour) + num(e.km) * num(e.cKm));
-    [...trackerRowsEl.children].forEach(r => {
-      r.querySelector('.tCost').value = round2(num(e.hours) * num(r.querySelector('.tHour')) + num(e.km) * num(r.querySelector('.tKm')));
-    });
-  }
+  [...trackerRowsEl.children].forEach(r => {
+    const h = r.querySelector('.wHours'), k = r.querySelector('.wKm');
+    if (h.value || k.value) r.querySelector('.tCost').value = round2(num(h) * num(r.querySelector('.tHour')) + num(k) * num(r.querySelector('.tKm')));
+  });
+  const tot = jobTotals();
+  if (tot.any) e.income.value = round2(tot.hours * num(e.cHour) + tot.km * num(e.cKm));
   updateJobProfit();
 }
 function updateJobProfit() {
-  const cost = round2(readTrackers().reduce((s, t) => s + t.cost, 0));
+  const tot = jobTotals();
+  const cost = round2(tot.ts.reduce((s, t) => s + t.cost, 0));
   const p = round2(num(jobForm.elements.income) - cost);
+  document.getElementById('jobTotals').textContent = tot.any ? `סה"כ לכל העוקבים: ${tot.hours} שעות, ${tot.km} ק"מ` : '';
   document.getElementById('jobProfit').innerHTML =
     `סה"כ לעוקבים: <span class="expense">${money(cost)}</span> &nbsp;|&nbsp; רווח מהעבודה: <span class="${p >= 0 ? 'income' : 'expense'}">${money(p)}</span>`;
 }
-['hours', 'km', 'cHour', 'cKm'].forEach(n => jobForm.elements[n].oninput = calcJob);
+['cHour', 'cKm'].forEach(n => jobForm.elements[n].oninput = calcJob);
 jobForm.elements.income.oninput = updateJobProfit;
 
 jobForm.onsubmit = function (ev) {
@@ -632,8 +645,10 @@ jobForm.onsubmit = function (ev) {
   const rates = { cHour: num(e.cHour), cKm: num(e.cKm) };
   try { localStorage.setItem(RATES_KEY, JSON.stringify({ ...rates, tHour: trackers[0].tHour, tKm: trackers[0].tKm })); } catch (err) {}
   const note = e.note.value.trim();
-  const hours = e.hours.value === '' ? null : num(e.hours), km = e.km.value === '' ? null : num(e.km);
-  const details = [hours != null && `${hours} שעות`, km != null && `${km} ק"מ`].filter(Boolean).join(', ');
+  const tot = jobTotals();
+  const hours = tot.any ? tot.hours : null, km = tot.any ? tot.km : null;
+  const detailsOf = (h, k) => [h != null && `${h} שעות`, k != null && `${k} ק"מ`].filter(Boolean).join(', ');
+  const details = detailsOf(hours, km);
   const jobId = editingJob || uid();
   const common = { jobId, date: e.date.value, customerId: e.customerId.value, hours, km, note };
   const names = trackers.map(t => t.name).join(' + ');
@@ -644,8 +659,8 @@ jobForm.onsubmit = function (ev) {
   const keep = trackers.map((t, i) => {
     const id = expenseDocId(jobId, i);
     ops.push(b => b.set(col('transactions').doc(id), {
-      ...common, type: 'expense', amount: t.cost, category: 'עוקבים', tracker: t.name,
-      description: [t.name, details, note].filter(Boolean).join(' – ')
+      ...common, hours: t.hours, km: t.km, type: 'expense', amount: t.cost, category: 'עוקבים', tracker: t.name,
+      description: [t.name, detailsOf(t.hours, t.km), note].filter(Boolean).join(' – ')
     }));
     return id;
   });
