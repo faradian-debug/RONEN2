@@ -64,6 +64,7 @@
   .two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .field input, .field select { width: 100%; min-width: 0; }
   .hint { font-size: 12px; color: var(--muted); margin: 0; }
+  #jobDlg[data-mode="fixed"] .rate-only { display: none; }
   .dot { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-inline-end: 4px; }
 </style>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
@@ -91,6 +92,7 @@
     <button data-tab="dash" class="active">סקירה</button>
     <button data-tab="tx">הכנסות והוצאות</button>
     <button data-tab="cust">לקוחות</button>
+    <button data-tab="alon">אלון קציר</button>
     <button data-tab="backup">גיבוי</button>
   </nav>
   <div class="user"><span id="userName"></span><button class="link" id="logoutBtn">יציאה</button></div>
@@ -124,6 +126,7 @@
   <section id="tx">
     <div class="toolbar">
       <h2>הכנסות והוצאות</h2>
+      <button class="btn primary" onclick="openJob(null, true)">+ עבודה עם אלון</button>
       <button class="btn primary" onclick="openJob()">+ עבודה עם עוקב</button>
       <button class="btn primary" onclick="openTx('income')">+ הכנסה</button>
       <button class="btn primary" onclick="openTx('expense')">+ הוצאה</button>
@@ -149,6 +152,28 @@
       <button class="btn primary" onclick="openCust()">+ לקוח חדש</button>
     </div>
     <div class="card"><div class="table-wrap"><table id="custTable"></table></div></div>
+  </section>
+
+  <!-- אלון קציר -->
+  <section id="alon">
+    <div class="toolbar">
+      <h2>עבודות עם אלון קציר</h2>
+      <button class="btn primary" onclick="openJob(null, true)">+ עבודה עם אלון</button>
+    </div>
+    <p style="color:var(--muted);margin-top:0">אלון מקבל את הכסף מהלקוח ומשלם לעוקבים ולמדובבים. את הרווח מתחלקים חצי-חצי.</p>
+    <div class="stats">
+      <div class="card stat"><div class="label">הכנסות מלקוחות</div><div class="value income" id="aIncome"></div></div>
+      <div class="card stat"><div class="label">תשלום לעוקבים ומדובבים</div><div class="value expense" id="aCost"></div></div>
+      <div class="card stat"><div class="label">רווח משותף</div><div class="value" id="aProfit"></div></div>
+      <div class="card stat"><div class="label">החלק שלי</div><div class="value income" id="aMine"></div></div>
+      <div class="card stat"><div class="label">אלון חייב לי</div><div class="value" id="aOwed"></div></div>
+    </div>
+    <div class="card">
+      <div class="toolbar">
+        <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="alonOpen"> רק עבודות שאלון עוד לא העביר את החלק שלי</label>
+      </div>
+      <div class="table-wrap"><table id="alonTable"></table></div>
+    </div>
   </section>
 
   <!-- גיבוי -->
@@ -218,18 +243,26 @@
       <div class="field"><label>תאריך *</label><input name="date" type="date" required></div>
       <div class="field"><label>לקוח *</label><select name="customerId" required></select></div>
     </div>
+    <div id="partnerFields" hidden>
+      <div class="two">
+        <div class="field"><label>סוג העבודה</label>
+          <select name="jobType"><option>מעקב</option><option>הפעלת מדובבים</option><option>עבודת מדובבים</option><option>אחר</option></select></div>
+        <div class="field"><label>החלק שלי מהרווח (%)</label><input name="split" type="number" min="0" max="100" step="1"></div>
+      </div>
+    </div>
     <div id="trackerRows"></div>
     <datalist id="trackerList"></datalist>
     <button type="button" class="btn" id="addTrackerBtn" style="margin-bottom:12px">+ עוקב נוסף</button>
     <div id="jobTotals" style="font-weight:600;margin-bottom:10px"></div>
-    <div class="two">
+    <div class="two rate-only">
       <div class="field"><label>הלקוח משלם – ₪ לשעה</label><input name="cHour" type="number" step="0.01" min="0"></div>
       <div class="field"><label>הלקוח משלם – ₪ לק"מ</label><input name="cKm" type="number" step="0.01" min="0"></div>
     </div>
-    <p id="clientRateHint" style="font-size:12px;color:var(--muted);margin:-4px 0 10px"></p>
+    <p id="clientRateHint" class="rate-only" style="font-size:12px;color:var(--muted);margin:-4px 0 10px"></p>
     <div class="field"><label>הכנסה מהלקוח (₪) *</label><input name="income" type="number" step="0.01" min="0" required></div>
     <div id="jobProfit" style="font-weight:600"></div>
-    <p style="font-size:12px;color:var(--muted);margin:4px 0 10px">כל עוקב מקבל לפי השעות והק"מ שלו. הלקוח משלם לפי סך השעות והק"מ של כל העוקבים. בעבודה במחיר קבוע משאירים שעות וק"מ ריקים ומקלידים את הסכומים.</p>
+    <p id="jobHelp" style="font-size:12px;color:var(--muted);margin:4px 0 10px"></p>
+    <label id="settledField" hidden style="display:flex;gap:6px;align-items:center;margin-bottom:10px;font-size:14px"><input type="checkbox" name="settled"> אלון העביר לי את החלק שלי</label>
     <div class="field"><label>הערה</label><input name="note"></div>
     <div class="actions">
       <button class="btn primary" value="save">שמירה</button>
@@ -510,15 +543,15 @@ function addTrackerRow(tr = {}) {
   row.className = 'tracker-row';
   row.innerHTML = `
     <div class="head"><span class="title"></span><button type="button" class="link danger remove">הסרה</button></div>
-    <div class="field"><label>שם העוקב *</label><input class="tName" list="trackerList" required></div>
-    <div class="two">
+    <div class="field"><label>שם ה<span class="wWord"></span> *</label><input class="tName" list="trackerList" required></div>
+    <div class="two rate-only">
       <div class="field"><label>שעות שעבד</label><input class="wHours" type="number" step="0.25" min="0"></div>
       <div class="field"><label>ק"מ במשמרת</label><input class="wKm" type="number" step="1" min="0"></div>
     </div>
     <div class="three">
-      <div class="field"><label>₪ לשעה</label><input class="tHour" type="number" step="0.01" min="0"></div>
-      <div class="field"><label>₪ לק"מ</label><input class="tKm" type="number" step="0.01" min="0"></div>
-      <div class="field"><label>תשלום לעוקב (₪) *</label><input class="tCost" type="number" step="0.01" min="0" required></div>
+      <div class="field rate-only"><label>₪ לשעה</label><input class="tHour" type="number" step="0.01" min="0"></div>
+      <div class="field rate-only"><label>₪ לק"מ</label><input class="tKm" type="number" step="0.01" min="0"></div>
+      <div class="field"><label>תשלום ל<span class="wWord"></span> (₪) *</label><input class="tCost" type="number" step="0.01" min="0" required></div>
     </div>
     <p class="hint"></p>`;
   const q = s => row.querySelector(s);
@@ -547,11 +580,38 @@ function addTrackerRow(tr = {}) {
   return row;
 }
 function renumberTrackers() {
-  const rows = [...trackerRowsEl.children];
+  const rows = [...trackerRowsEl.children], word = workerWord();
   rows.forEach((r, i) => {
-    r.querySelector('.title').textContent = `עוקב ${i + 1}`;
-    r.querySelector('.remove').hidden = rows.length === 1;
+    r.querySelector('.title').textContent = `${word} ${i + 1}`;
+    r.querySelectorAll('.wWord').forEach(s => s.textContent = word);
+    // בעבודה "אחר" עם אלון אפשר גם בלי עוקבים בכלל
+    r.querySelector('.remove').hidden = rows.length === 1 && !isPartnerJob();
   });
+  document.getElementById('addTrackerBtn').textContent = `+ ${word} ${rows.length ? 'נוסף' : ''}`;
+}
+
+// ---------- עבודה עם אלון קציר ----------
+// אלון מקבל את הכסף מהלקוח ומשלם לעובדים; הרווח מתחלק לפי split (ברירת מחדל 50%).
+// נרשם: הכנסה מלאה, הוצאה לכל עובד, והוצאה בגובה החלק של אלון (jobId-partner)
+const PARTNER = 'אלון קציר';
+const isPartnerJob = () => !document.getElementById('partnerFields').hidden;
+const isElicitJob = () => isPartnerJob() && jobForm.elements.jobType.value.includes('מדובב');
+const workerWord = () => isElicitJob() ? 'מדובב' : 'עוקב';
+function setJobMode() {
+  const fixed = isPartnerJob() && jobForm.elements.jobType.value !== 'מעקב';
+  document.getElementById('jobDlg').dataset.mode = fixed ? 'fixed' : '';
+  if (fixed) trackerRowsEl.querySelectorAll('.wHours, .wKm').forEach(i => i.value = '');
+  document.getElementById('jobHelp').textContent = fixed
+    ? 'מקלידים את הסכום שהלקוח שילם ואת התשלום לכל ' + workerWord() + '.'
+    : 'כל עוקב מקבל לפי השעות והק"מ שלו. הלקוח משלם לפי סך השעות והק"מ של כל העוקבים. בעבודה במחיר קבוע משאירים שעות וק"מ ריקים ומקלידים את הסכומים.';
+  renumberTrackers();
+  updateJobProfit();
+}
+jobForm.elements.jobType.onchange = setJobMode;
+jobForm.elements.split.oninput = () => updateJobProfit();
+function partnerShares(profit, split) {
+  const mine = round2(profit * split / 100);
+  return { mine, alon: round2(profit - mine) };
 }
 const optNum = el => el.value === '' ? null : num(el);
 function readTrackers() {
@@ -564,11 +624,17 @@ function readTrackers() {
 }
 document.getElementById('addTrackerBtn').onclick = () => { addTrackerRow(); calcJob(); };
 
-function openJob(jobId) {
+function openJob(jobId, partner) {
   editingJob = jobId || null;
   const e = jobForm.elements;
-  const inc = db.transactions.find(t => t.jobId === jobId && t.type === 'income') || {};
-  const exps = db.transactions.filter(t => t.jobId === jobId && t.type === 'expense').sort((a, b) => a.id.localeCompare(b.id));
+  const inc = db.transactions.find(t => t.id === jobId + '-in') || db.transactions.find(t => t.jobId === jobId && t.type === 'income') || {};
+  const exps = db.transactions.filter(t => t.jobId === jobId && t.type === 'expense' && !t.id.endsWith('-partner')).sort((a, b) => a.id.localeCompare(b.id));
+  partner = jobId ? !!inc.partner : !!partner;
+  document.getElementById('partnerFields').hidden = !partner;
+  document.getElementById('settledField').hidden = !partner;
+  e.jobType.value = inc.jobType || 'מעקב';
+  e.split.value = inc.split ?? 50;
+  e.settled.checked = !!inc.settled;
   const defaults = lastRates();
   e.date.value = inc.date || today();
   e.customerId.innerHTML = custOptions(jobId ? inc.customerId : document.getElementById('fCust').value, '— בחרו לקוח —');
@@ -590,8 +656,8 @@ function openJob(jobId) {
   }).join('');
   document.getElementById('clientRateHint').textContent = '';
   if (!jobId && e.customerId.value) applyClientRates();
-  document.getElementById('jobTitle').textContent = jobId ? 'עריכת עבודה' : 'עבודה עם עוקבים';
-  updateJobProfit();
+  document.getElementById('jobTitle').textContent = (jobId ? 'עריכת עבודה' : partner ? 'עבודה עם' : 'עבודה עם עוקבים') + (partner ? ' ' + PARTNER : '');
+  setJobMode();
   document.getElementById('jobDlg').showModal();
 }
 
@@ -631,9 +697,14 @@ function updateJobProfit() {
   const tot = jobTotals();
   const cost = round2(tot.ts.reduce((s, t) => s + t.cost, 0));
   const p = round2(num(jobForm.elements.income) - cost);
+  const word = isElicitJob() ? 'מדובבים' : 'עוקבים';
   document.getElementById('jobTotals').textContent = tot.any ? `סה"כ לכל העוקבים: ${tot.hours} שעות, ${tot.km} ק"מ` : '';
-  document.getElementById('jobProfit').innerHTML =
-    `סה"כ לעוקבים: <span class="expense">${money(cost)}</span> &nbsp;|&nbsp; רווח מהעבודה: <span class="${p >= 0 ? 'income' : 'expense'}">${money(p)}</span>`;
+  let html = `סה"כ ל${word}: <span class="expense">${money(cost)}</span> &nbsp;|&nbsp; רווח מהעבודה: <span class="${p >= 0 ? 'income' : 'expense'}">${money(p)}</span>`;
+  if (isPartnerJob()) {
+    const s = partnerShares(p, num(jobForm.elements.split));
+    html += `<br>החלק שלי: <span class="income">${money(s.mine)}</span> &nbsp;|&nbsp; החלק של אלון: ${money(s.alon)}`;
+  }
+  document.getElementById('jobProfit').innerHTML = html;
 }
 ['cHour', 'cKm'].forEach(n => jobForm.elements[n].oninput = calcJob);
 jobForm.elements.income.oninput = updateJobProfit;
@@ -643,7 +714,11 @@ jobForm.onsubmit = function (ev) {
   const e = this.elements;
   const trackers = readTrackers();
   const rates = { cHour: num(e.cHour), cKm: num(e.cKm) };
-  try { localStorage.setItem(RATES_KEY, JSON.stringify({ ...rates, tHour: trackers[0].tHour, tKm: trackers[0].tKm })); } catch (err) {}
+  if (trackers[0]) try { localStorage.setItem(RATES_KEY, JSON.stringify({ ...rates, tHour: trackers[0].tHour, tKm: trackers[0].tKm })); } catch (err) {}
+  const partner = isPartnerJob(), jobType = e.jobType.value, split = num(e.split);
+  const workersCost = round2(trackers.reduce((s, t) => s + t.cost, 0));
+  const shares = partnerShares(round2(num(e.income) - workersCost), split);
+  const partnerData = partner ? { partner: PARTNER, jobType, split, settled: e.settled.checked, workersCost, myShare: shares.mine, alonShare: shares.alon } : {};
   const note = e.note.value.trim();
   const tot = jobTotals();
   const hours = tot.any ? tot.hours : null, km = tot.any ? tot.km : null;
@@ -652,20 +727,29 @@ jobForm.onsubmit = function (ev) {
   const jobId = editingJob || uid();
   const common = { jobId, date: e.date.value, customerId: e.customerId.value, hours, km, note };
   const names = trackers.map(t => t.name).join(' + ');
+  const prefix = partner ? `${PARTNER} (${jobType})` : '';
   const ops = [b => b.set(col('transactions').doc(jobId + '-in'), {
-    ...common, type: 'income', amount: round2(num(e.income)), category: 'עבודה', rates, trackers, tracker: names,
-    description: [names, details, note].filter(Boolean).join(' – ')
+    ...common, ...partnerData, type: 'income', amount: round2(num(e.income)), category: partner ? 'עבודה עם אלון' : 'עבודה', rates, trackers, tracker: names,
+    description: [prefix, names, details, note].filter(Boolean).join(' – ')
   })];
   const keep = trackers.map((t, i) => {
     const id = expenseDocId(jobId, i);
     ops.push(b => b.set(col('transactions').doc(id), {
-      ...common, hours: t.hours, km: t.km, type: 'expense', amount: t.cost, category: 'עוקבים', tracker: t.name,
+      ...common, hours: t.hours, km: t.km, type: 'expense', amount: t.cost, category: isElicitJob() ? 'מדובבים' : 'עוקבים', tracker: t.name,
       description: [t.name, detailsOf(t.hours, t.km), note].filter(Boolean).join(' – ')
     }));
     return id;
   });
-  // עוקב שהוסר מהעבודה – מוחקים את ההוצאה שלו
-  db.transactions.filter(t => t.jobId === jobId && t.type === 'expense' && !keep.includes(t.id))
+  if (partner) {
+    // החלק של אלון יורד מהרווח שלי; בהפסד – אלון משתתף בו, ולכן זו הכנסה
+    keep.push(jobId + '-partner');
+    ops.push(b => b.set(col('transactions').doc(jobId + '-partner'), {
+      ...common, type: shares.alon >= 0 ? 'expense' : 'income', amount: Math.abs(shares.alon), category: 'חלק אלון',
+      description: [`החלק של ${PARTNER} ברווח (${round2(100 - split)}%)`, names, note].filter(Boolean).join(' – ')
+    }));
+  }
+  // עובד שהוסר מהעבודה – מוחקים את ההוצאה שלו
+  db.transactions.filter(t => t.jobId === jobId && t.id !== jobId + '-in' && !keep.includes(t.id))
     .forEach(t => ops.push(b => b.delete(col('transactions').doc(t.id))));
   commitOps(ops).catch(fail);
   const c = db.customers.find(x => x.id === common.customerId);
@@ -733,7 +817,43 @@ document.getElementById('importFile').onchange = async e => {
   e.target.value = '';
 };
 
-function renderAll() { renderDash(); renderCust(); renderTx(); }
+function renderAlon() {
+  const all = db.transactions.filter(t => t.type === 'income' && t.partner).sort((a, b) => b.date.localeCompare(a.date));
+  const sum = (list, f) => round2(list.reduce((s, j) => s + (f(j) || 0), 0));
+  const profit = sum(all, j => j.amount - j.workersCost), owed = sum(all.filter(j => !j.settled), j => j.myShare);
+  document.getElementById('aIncome').textContent = money(sum(all, j => j.amount));
+  document.getElementById('aCost').textContent = money(sum(all, j => j.workersCost));
+  const ap = document.getElementById('aProfit');
+  ap.textContent = money(profit); ap.className = 'value ' + (profit >= 0 ? 'income' : 'expense');
+  document.getElementById('aMine').textContent = money(sum(all, j => j.myShare));
+  const ao = document.getElementById('aOwed');
+  ao.textContent = money(owed); ao.className = 'value ' + (owed > 0 ? 'expense' : '');
+
+  const list = document.getElementById('alonOpen').checked ? all.filter(j => !j.settled) : all;
+  const t = document.getElementById('alonTable');
+  if (!list.length) { t.innerHTML = `<tr><td class="empty">${all.length ? 'אין עבודות פתוחות – אלון העביר הכל' : 'עדיין אין עבודות עם אלון. לחצו "+ עבודה עם אלון"'}</td></tr>`; return; }
+  t.innerHTML = '<tr><th>תאריך</th><th>סוג</th><th>לקוח</th><th>עוקבים / מדובבים</th><th>הכנסה</th><th>תשלום לעובדים</th><th>רווח</th><th>החלק שלי</th><th>אלון העביר</th><th></th></tr>' +
+    list.map(j => {
+      const p = round2(j.amount - j.workersCost);
+      return `<tr>
+        <td>${fmtDate(j.date)}</td>
+        <td>${esc(j.jobType)}</td>
+        <td>${esc(custName(j.customerId))}</td>
+        <td style="white-space:normal">${esc(j.tracker)}</td>
+        <td class="num income">${money(j.amount)}</td>
+        <td class="num expense">${money(j.workersCost)}</td>
+        <td class="num ${p >= 0 ? 'income' : 'expense'}">${money(p)}</td>
+        <td class="num income"><b>${money(j.myShare)}</b></td>
+        <td style="text-align:center"><input type="checkbox" ${j.settled ? 'checked' : ''} onchange="setSettled('${j.id}', this.checked)"></td>
+        <td><button class="link" onclick="openJob('${j.jobId}')">עריכה</button>
+            <button class="link danger" onclick="delTx('${j.id}')">מחיקה</button></td>
+      </tr>`;
+    }).join('');
+}
+document.getElementById('alonOpen').onchange = renderAlon;
+function setSettled(id, settled) { col('transactions').doc(id).update({ settled }).catch(fail); }
+
+function renderAll() { renderDash(); renderCust(); renderTx(); renderAlon(); }
 </script>
 </body>
 </html>
