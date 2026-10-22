@@ -173,6 +173,10 @@
       <div class="field"><label>אימייל</label><input name="email" type="email"></div>
     </div>
     <div class="field"><label>כתובת</label><input name="address"></div>
+    <div class="two">
+      <div class="field"><label>תעריף – ₪ לשעת עבודה</label><input name="hourRate" type="number" step="0.01" min="0"></div>
+      <div class="field"><label>תעריף – ₪ לק"מ</label><input name="kmRate" type="number" step="0.01" min="0"></div>
+    </div>
     <div class="field"><label>הערות</label><textarea name="notes" rows="3"></textarea></div>
     <div class="actions">
       <button class="btn primary" value="save">שמירה</button>
@@ -211,18 +215,19 @@
     <div class="field"><label>שם העוקב *</label><input name="tracker" list="trackerList" required></div>
     <datalist id="trackerList"></datalist>
     <div class="two">
+      <div class="field"><label>העוקב מקבל – ₪ לשעה</label><input name="tHour" type="number" step="0.01" min="0"></div>
+      <div class="field"><label>העוקב מקבל – ₪ לק"מ</label><input name="tKm" type="number" step="0.01" min="0"></div>
+    </div>
+    <p id="trackerRateHint" style="font-size:12px;color:var(--muted);margin:-4px 0 10px"></p>
+    <div class="two">
       <div class="field"><label>שעות</label><input name="hours" type="number" step="0.25" min="0"></div>
       <div class="field"><label>ק"מ</label><input name="km" type="number" step="1" min="0"></div>
     </div>
-    <details style="margin-bottom:10px">
-      <summary style="cursor:pointer;color:var(--muted);font-size:13px">תעריפים</summary>
-      <div class="two" style="margin-top:8px">
-        <div class="field"><label>ללקוח – ₪ לשעה</label><input name="cHour" type="number" step="0.01" min="0"></div>
-        <div class="field"><label>ללקוח – ₪ לק"מ</label><input name="cKm" type="number" step="0.01" min="0"></div>
-        <div class="field"><label>לעוקב – ₪ לשעה</label><input name="tHour" type="number" step="0.01" min="0"></div>
-        <div class="field"><label>לעוקב – ₪ לק"מ</label><input name="tKm" type="number" step="0.01" min="0"></div>
-      </div>
-    </details>
+    <div class="two">
+      <div class="field"><label>הלקוח משלם – ₪ לשעה</label><input name="cHour" type="number" step="0.01" min="0"></div>
+      <div class="field"><label>הלקוח משלם – ₪ לק"מ</label><input name="cKm" type="number" step="0.01" min="0"></div>
+    </div>
+    <p id="clientRateHint" style="font-size:12px;color:var(--muted);margin:-4px 0 10px"></p>
     <div class="two">
       <div class="field"><label>הכנסה מהלקוח (₪) *</label><input name="income" type="number" step="0.01" min="0" required></div>
       <div class="field"><label>תשלום לעוקב (₪) *</label><input name="cost" type="number" step="0.01" min="0" required></div>
@@ -354,7 +359,7 @@ function renderCust() {
     .sort((a, b) => a.name.localeCompare(b.name, 'he'));
   const t = document.getElementById('custTable');
   if (!list.length) { t.innerHTML = `<tr><td class="empty">${db.customers.length ? 'לא נמצאו לקוחות' : 'עדיין אין לקוחות. לחצו "+ לקוח חדש"'}</td></tr>`; return; }
-  t.innerHTML = '<tr><th>שם</th><th>טלפון</th><th>אימייל</th><th>כתובת</th><th>הכנסות</th><th>הוצאות</th><th>רווח</th><th>הערות</th><th></th></tr>' +
+  t.innerHTML = '<tr><th>שם</th><th>טלפון</th><th>אימייל</th><th>כתובת</th><th>תעריף</th><th>הכנסות</th><th>הוצאות</th><th>רווח</th><th>הערות</th><th></th></tr>' +
     list.map(c => {
       const s = custTotals(c.id);
       return `<tr>
@@ -362,6 +367,7 @@ function renderCust() {
         <td>${c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>` : ''}</td>
         <td>${c.email ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : ''}</td>
         <td>${esc(c.address)}</td>
+        <td>${c.hourRate != null ? `${c.hourRate} ₪ לשעה · ${c.kmRate ?? 0} ₪ לק"מ` : ''}</td>
         <td class="num income">${money(s.inc)}</td>
         <td class="num expense">${money(s.exp)}</td>
         <td class="num ${s.profit >= 0 ? 'income' : 'expense'}"><b>${money(s.profit)}</b></td>
@@ -378,6 +384,7 @@ function openCust(id) {
   editingCust = id || null;
   const f = document.getElementById('custForm'), c = db.customers.find(x => x.id === id) || {};
   ['name', 'phone', 'email', 'address', 'notes'].forEach(k => f.elements[k].value = c[k] || '');
+  ['hourRate', 'kmRate'].forEach(k => f.elements[k].value = c[k] ?? '');
   document.getElementById('custTitle').textContent = id ? 'עריכת לקוח' : 'לקוח חדש';
   document.getElementById('custDlg').showModal();
 }
@@ -385,6 +392,7 @@ document.getElementById('custForm').onsubmit = function (e) {
   if (e.submitter?.value !== 'save') return;
   const f = this;
   const data = Object.fromEntries(['name', 'phone', 'email', 'address', 'notes'].map(k => [k, f.elements[k].value.trim()]));
+  ['hourRate', 'kmRate'].forEach(k => data[k] = f.elements[k].value === '' ? null : parseFloat(f.elements[k].value));
   col('customers').doc(editingCust || uid()).set(data, { merge: true }).catch(fail);
 };
 function delCust(id) {
@@ -504,11 +512,53 @@ function openJob(jobId) {
   e.cost.value = exp.amount ?? '';
   e.note.value = inc.note || '';
   const trackers = [...new Set(db.transactions.map(t => t.tracker).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'he'));
-  document.getElementById('trackerList').innerHTML = trackers.map(t => `<option value="${esc(t)}">`).join('');
+  document.getElementById('trackerList').innerHTML = trackers.map(t => {
+    const r = trackerRates(t);
+    return `<option value="${esc(t)}" ${r ? `label="${r.tHour} ₪ לשעה · ${r.tKm} ₪ לק&quot;מ"` : ''}>`;
+  }).join('');
+  document.getElementById('trackerRateHint').textContent = '';
+  document.getElementById('clientRateHint').textContent = '';
+  if (!jobId && e.customerId.value) applyClientRates();
   document.getElementById('jobTitle').textContent = jobId ? 'עריכת עבודה' : 'עבודה עם עוקב';
   updateJobProfit();
   document.getElementById('jobDlg').showModal();
 }
+// התעריף של עוקב = התעריף מהעבודה האחרונה שלו (כל עוקב גובה אחרת)
+function trackerRates(name) {
+  const last = db.transactions
+    .filter(t => t.type === 'income' && t.tracker === name && t.rates)
+    .sort((a, b) => b.date.localeCompare(a.date))[0];
+  return last && { tHour: last.rates.tHour, tKm: last.rates.tKm };
+}
+function applyTrackerRates() {
+  const e = document.getElementById('jobForm').elements;
+  const name = e.tracker.value.trim(), r = trackerRates(name);
+  const hint = document.getElementById('trackerRateHint');
+  if (r) {
+    e.tHour.value = r.tHour; e.tKm.value = r.tKm;
+    hint.textContent = `התעריף של ${name} מהעבודה האחרונה שלו. אפשר לשנות, והתעריף החדש יישמר לפעם הבאה.`;
+    calcJob();
+  } else {
+    hint.textContent = name ? 'עוקב חדש – הזינו את התעריף שלו, והוא יישמר לפעם הבאה.' : '';
+  }
+}
+document.getElementById('jobForm').elements.tracker.onchange = applyTrackerRates;
+
+// התעריף של לקוח נשמר בכרטיס הלקוח (כל לקוח משלם אחרת)
+function applyClientRates() {
+  const e = document.getElementById('jobForm').elements;
+  const c = db.customers.find(x => x.id === e.customerId.value);
+  const hint = document.getElementById('clientRateHint');
+  if (c && c.hourRate != null) {
+    e.cHour.value = c.hourRate; e.cKm.value = c.kmRate ?? 0;
+    hint.textContent = `התעריף של ${c.name} מכרטיס הלקוח. שינוי כאן יעדכן גם את הכרטיס.`;
+    calcJob();
+  } else {
+    hint.textContent = c ? 'ללקוח הזה עוד אין תעריף – הזינו אותו, והוא יישמר בכרטיס הלקוח.' : '';
+  }
+}
+document.getElementById('jobForm').elements.customerId.onchange = applyClientRates;
+
 function calcJob() {
   const e = document.getElementById('jobForm').elements;
   if (e.hours.value || e.km.value) { // בלי שעות וק"מ – מחיר קבוע שמוקלד ידנית
@@ -541,6 +591,9 @@ document.getElementById('jobForm').onsubmit = function (ev) {
     b => b.set(col('transactions').doc(common.jobId + '-in'), { ...common, type: 'income', amount: round2(num(e.income)), category: 'עבודה', rates }),
     b => b.set(col('transactions').doc(common.jobId + '-out'), { ...common, type: 'expense', amount: round2(num(e.cost)), category: 'עוקבים' })
   ]).catch(fail);
+  const c = db.customers.find(x => x.id === common.customerId);
+  if (c && (c.hourRate !== rates.cHour || c.kmRate !== rates.cKm))
+    col('customers').doc(c.id).set({ hourRate: rates.cHour, kmRate: rates.cKm }, { merge: true }).catch(fail);
 };
 
 function exportCsv() {
