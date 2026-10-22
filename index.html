@@ -58,6 +58,12 @@
   .bar { height: 9px; border-radius: 3px; min-width: 2px; }
   .bar.in { background: var(--income); } .bar.out { background: var(--expense); }
   .legend { font-size: 13px; color: var(--muted); display: flex; gap: 14px; margin-bottom: 8px; }
+  .tracker-row { border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-bottom: 10px; }
+  .tracker-row .head { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .three { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .field input, .field select { width: 100%; min-width: 0; }
+  .hint { font-size: 12px; color: var(--muted); margin: 0; }
   .dot { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-inline-end: 4px; }
 </style>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
@@ -212,13 +218,9 @@
       <div class="field"><label>תאריך *</label><input name="date" type="date" required></div>
       <div class="field"><label>לקוח *</label><select name="customerId" required></select></div>
     </div>
-    <div class="field"><label>שם העוקב *</label><input name="tracker" list="trackerList" required></div>
+    <div id="trackerRows"></div>
     <datalist id="trackerList"></datalist>
-    <div class="two">
-      <div class="field"><label>העוקב מקבל – ₪ לשעה</label><input name="tHour" type="number" step="0.01" min="0"></div>
-      <div class="field"><label>העוקב מקבל – ₪ לק"מ</label><input name="tKm" type="number" step="0.01" min="0"></div>
-    </div>
-    <p id="trackerRateHint" style="font-size:12px;color:var(--muted);margin:-4px 0 10px"></p>
+    <button type="button" class="btn" id="addTrackerBtn" style="margin-bottom:12px">+ עוקב נוסף</button>
     <div class="two">
       <div class="field"><label>שעות</label><input name="hours" type="number" step="0.25" min="0"></div>
       <div class="field"><label>ק"מ</label><input name="km" type="number" step="1" min="0"></div>
@@ -228,10 +230,7 @@
       <div class="field"><label>הלקוח משלם – ₪ לק"מ</label><input name="cKm" type="number" step="0.01" min="0"></div>
     </div>
     <p id="clientRateHint" style="font-size:12px;color:var(--muted);margin:-4px 0 10px"></p>
-    <div class="two">
-      <div class="field"><label>הכנסה מהלקוח (₪) *</label><input name="income" type="number" step="0.01" min="0" required></div>
-      <div class="field"><label>תשלום לעוקב (₪) *</label><input name="cost" type="number" step="0.01" min="0" required></div>
-    </div>
+    <div class="field"><label>הכנסה מהלקוח (₪) *</label><input name="income" type="number" step="0.01" min="0" required></div>
     <div id="jobProfit" style="font-weight:600"></div>
     <p style="font-size:12px;color:var(--muted);margin:4px 0 10px">הסכומים מחושבים לפי שעות וק"מ. בעבודה במחיר קבוע משאירים שעות וק"מ ריקים ומקלידים את הסכומים.</p>
     <div class="field"><label>הערה</label><input name="note"></div>
@@ -484,69 +483,117 @@ function delTx(id) {
   col('transactions').doc(id).delete().catch(fail);
 }
 
-// ---------- עבודה עם עוקב ----------
+// ---------- עבודה עם עוקבים ----------
+// עבודה = הכנסה אחת מהלקוח (jobId-in) + הוצאה לכל עוקב (jobId-out, jobId-out2, ...)
 const RATES_KEY = 'ronen2-rates';
 const DEFAULT_RATES = { cHour: 300, cKm: 7, tHour: 120, tKm: 3.2 };
-const RATE_FIELDS = Object.keys(DEFAULT_RATES);
 let editingJob = null;
 const round2 = n => Math.round(n * 100) / 100;
 const num = el => parseFloat(el.value) || 0;
+const jobForm = document.getElementById('jobForm');
+const trackerRowsEl = document.getElementById('trackerRows');
 function lastRates() {
   try { return { ...DEFAULT_RATES, ...JSON.parse(localStorage.getItem(RATES_KEY)) }; }
   catch (e) { return { ...DEFAULT_RATES }; }
 }
+const expenseDocId = (jobId, i) => jobId + '-out' + (i ? i + 1 : '');
+
+// התעריף של עוקב = התעריף מהעבודה האחרונה שלו (כל עוקב גובה אחרת)
+function trackerRates(name) {
+  const jobs = db.transactions.filter(t => t.type === 'income' && (t.trackers || t.rates))
+    .sort((a, b) => b.date.localeCompare(a.date));
+  for (const t of jobs) {
+    const hit = t.trackers ? t.trackers.find(x => x.name === name) : (t.tracker === name && t.rates);
+    if (hit) return { tHour: hit.tHour, tKm: hit.tKm };
+  }
+}
+
+function addTrackerRow(tr = {}) {
+  const row = document.createElement('div');
+  row.className = 'tracker-row';
+  row.innerHTML = `
+    <div class="head"><span class="title"></span><button type="button" class="link danger remove">הסרה</button></div>
+    <div class="field"><label>שם העוקב *</label><input class="tName" list="trackerList" required></div>
+    <div class="three">
+      <div class="field"><label>₪ לשעה</label><input class="tHour" type="number" step="0.01" min="0"></div>
+      <div class="field"><label>₪ לק"מ</label><input class="tKm" type="number" step="0.01" min="0"></div>
+      <div class="field"><label>תשלום לעוקב (₪) *</label><input class="tCost" type="number" step="0.01" min="0" required></div>
+    </div>
+    <p class="hint"></p>`;
+  const q = s => row.querySelector(s);
+  const defaults = lastRates();
+  q('.tName').value = tr.name || '';
+  q('.tHour').value = tr.tHour ?? defaults.tHour;
+  q('.tKm').value = tr.tKm ?? defaults.tKm;
+  q('.tCost').value = tr.cost ?? '';
+  q('.tName').onchange = () => {
+    const name = q('.tName').value.trim(), r = trackerRates(name);
+    if (r) {
+      q('.tHour').value = r.tHour; q('.tKm').value = r.tKm;
+      q('.hint').textContent = `התעריף של ${name} מהעבודה האחרונה שלו. אפשר לשנות, והתעריף החדש יישמר לפעם הבאה.`;
+      calcJob();
+    } else {
+      q('.hint').textContent = name ? 'עוקב חדש – הזינו את התעריף שלו, והוא יישמר לפעם הבאה.' : '';
+    }
+  };
+  q('.tHour').oninput = q('.tKm').oninput = calcJob;
+  q('.tCost').oninput = updateJobProfit;
+  q('.remove').onclick = () => { row.remove(); renumberTrackers(); updateJobProfit(); };
+  trackerRowsEl.appendChild(row);
+  renumberTrackers();
+  return row;
+}
+function renumberTrackers() {
+  const rows = [...trackerRowsEl.children];
+  rows.forEach((r, i) => {
+    r.querySelector('.title').textContent = `עוקב ${i + 1}`;
+    r.querySelector('.remove').hidden = rows.length === 1;
+  });
+}
+function readTrackers() {
+  return [...trackerRowsEl.children].map(r => ({
+    name: r.querySelector('.tName').value.trim(),
+    tHour: num(r.querySelector('.tHour')), tKm: num(r.querySelector('.tKm')),
+    cost: round2(num(r.querySelector('.tCost')))
+  }));
+}
+document.getElementById('addTrackerBtn').onclick = () => { addTrackerRow(); calcJob(); };
 
 function openJob(jobId) {
   editingJob = jobId || null;
-  const e = document.getElementById('jobForm').elements;
+  const e = jobForm.elements;
   const inc = db.transactions.find(t => t.jobId === jobId && t.type === 'income') || {};
-  const exp = db.transactions.find(t => t.jobId === jobId && t.type === 'expense') || {};
-  const rates = { ...lastRates(), ...inc.rates };
+  const exps = db.transactions.filter(t => t.jobId === jobId && t.type === 'expense').sort((a, b) => a.id.localeCompare(b.id));
+  const defaults = lastRates();
   e.date.value = inc.date || today();
   e.customerId.innerHTML = custOptions(jobId ? inc.customerId : document.getElementById('fCust').value, '— בחרו לקוח —');
-  e.tracker.value = inc.tracker || '';
   e.hours.value = inc.hours ?? '';
   e.km.value = inc.km ?? '';
-  RATE_FIELDS.forEach(k => e[k].value = rates[k]);
+  e.cHour.value = inc.rates?.cHour ?? defaults.cHour;
+  e.cKm.value = inc.rates?.cKm ?? defaults.cKm;
   e.income.value = inc.amount ?? '';
-  e.cost.value = exp.amount ?? '';
   e.note.value = inc.note || '';
-  const trackers = [...new Set(db.transactions.map(t => t.tracker).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'he'));
-  document.getElementById('trackerList').innerHTML = trackers.map(t => {
+
+  // עבודות ישנות (עוקב יחיד) שמרו את התעריף ב-rates ואת השם ב-tracker
+  const trackers = inc.trackers || (jobId ? exps.map(x => ({ name: x.tracker, tHour: inc.rates?.tHour, tKm: inc.rates?.tKm, cost: x.amount })) : [{}]);
+  trackerRowsEl.innerHTML = '';
+  trackers.forEach(addTrackerRow);
+
+  const names = [...new Set(db.transactions.filter(t => t.type === 'expense').map(t => t.tracker).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'he'));
+  document.getElementById('trackerList').innerHTML = names.map(t => {
     const r = trackerRates(t);
     return `<option value="${esc(t)}" ${r ? `label="${r.tHour} ₪ לשעה · ${r.tKm} ₪ לק&quot;מ"` : ''}>`;
   }).join('');
-  document.getElementById('trackerRateHint').textContent = '';
   document.getElementById('clientRateHint').textContent = '';
   if (!jobId && e.customerId.value) applyClientRates();
-  document.getElementById('jobTitle').textContent = jobId ? 'עריכת עבודה' : 'עבודה עם עוקב';
+  document.getElementById('jobTitle').textContent = jobId ? 'עריכת עבודה' : 'עבודה עם עוקבים';
   updateJobProfit();
   document.getElementById('jobDlg').showModal();
 }
-// התעריף של עוקב = התעריף מהעבודה האחרונה שלו (כל עוקב גובה אחרת)
-function trackerRates(name) {
-  const last = db.transactions
-    .filter(t => t.type === 'income' && t.tracker === name && t.rates)
-    .sort((a, b) => b.date.localeCompare(a.date))[0];
-  return last && { tHour: last.rates.tHour, tKm: last.rates.tKm };
-}
-function applyTrackerRates() {
-  const e = document.getElementById('jobForm').elements;
-  const name = e.tracker.value.trim(), r = trackerRates(name);
-  const hint = document.getElementById('trackerRateHint');
-  if (r) {
-    e.tHour.value = r.tHour; e.tKm.value = r.tKm;
-    hint.textContent = `התעריף של ${name} מהעבודה האחרונה שלו. אפשר לשנות, והתעריף החדש יישמר לפעם הבאה.`;
-    calcJob();
-  } else {
-    hint.textContent = name ? 'עוקב חדש – הזינו את התעריף שלו, והוא יישמר לפעם הבאה.' : '';
-  }
-}
-document.getElementById('jobForm').elements.tracker.onchange = applyTrackerRates;
 
 // התעריף של לקוח נשמר בכרטיס הלקוח (כל לקוח משלם אחרת)
 function applyClientRates() {
-  const e = document.getElementById('jobForm').elements;
+  const e = jobForm.elements;
   const c = db.customers.find(x => x.id === e.customerId.value);
   const hint = document.getElementById('clientRateHint');
   if (c && c.hourRate != null) {
@@ -557,40 +604,55 @@ function applyClientRates() {
     hint.textContent = c ? 'ללקוח הזה עוד אין תעריף – הזינו אותו, והוא יישמר בכרטיס הלקוח.' : '';
   }
 }
-document.getElementById('jobForm').elements.customerId.onchange = applyClientRates;
+jobForm.elements.customerId.onchange = applyClientRates;
 
 function calcJob() {
-  const e = document.getElementById('jobForm').elements;
+  const e = jobForm.elements;
   if (e.hours.value || e.km.value) { // בלי שעות וק"מ – מחיר קבוע שמוקלד ידנית
     e.income.value = round2(num(e.hours) * num(e.cHour) + num(e.km) * num(e.cKm));
-    e.cost.value = round2(num(e.hours) * num(e.tHour) + num(e.km) * num(e.tKm));
+    [...trackerRowsEl.children].forEach(r => {
+      r.querySelector('.tCost').value = round2(num(e.hours) * num(r.querySelector('.tHour')) + num(e.km) * num(r.querySelector('.tKm')));
+    });
   }
   updateJobProfit();
 }
 function updateJobProfit() {
-  const e = document.getElementById('jobForm').elements;
-  const p = round2(num(e.income) - num(e.cost));
-  document.getElementById('jobProfit').innerHTML = `רווח מהעבודה: <span class="${p >= 0 ? 'income' : 'expense'}">${money(p)}</span>`;
+  const cost = round2(readTrackers().reduce((s, t) => s + t.cost, 0));
+  const p = round2(num(jobForm.elements.income) - cost);
+  document.getElementById('jobProfit').innerHTML =
+    `סה"כ לעוקבים: <span class="expense">${money(cost)}</span> &nbsp;|&nbsp; רווח מהעבודה: <span class="${p >= 0 ? 'income' : 'expense'}">${money(p)}</span>`;
 }
-['hours', 'km', ...RATE_FIELDS].forEach(n => document.getElementById('jobForm').elements[n].oninput = calcJob);
-['income', 'cost'].forEach(n => document.getElementById('jobForm').elements[n].oninput = updateJobProfit);
+['hours', 'km', 'cHour', 'cKm'].forEach(n => jobForm.elements[n].oninput = calcJob);
+jobForm.elements.income.oninput = updateJobProfit;
 
-document.getElementById('jobForm').onsubmit = function (ev) {
+jobForm.onsubmit = function (ev) {
   if (ev.submitter?.value !== 'save') return;
   const e = this.elements;
-  const rates = Object.fromEntries(RATE_FIELDS.map(k => [k, num(e[k])]));
-  try { localStorage.setItem(RATES_KEY, JSON.stringify(rates)); } catch (err) {}
-  const tracker = e.tracker.value.trim(), note = e.note.value.trim();
+  const trackers = readTrackers();
+  const rates = { cHour: num(e.cHour), cKm: num(e.cKm) };
+  try { localStorage.setItem(RATES_KEY, JSON.stringify({ ...rates, tHour: trackers[0].tHour, tKm: trackers[0].tKm })); } catch (err) {}
+  const note = e.note.value.trim();
   const hours = e.hours.value === '' ? null : num(e.hours), km = e.km.value === '' ? null : num(e.km);
   const details = [hours != null && `${hours} שעות`, km != null && `${km} ק"מ`].filter(Boolean).join(', ');
-  const common = {
-    jobId: editingJob || uid(), date: e.date.value, customerId: e.customerId.value, tracker, hours, km, note,
-    description: [tracker, details, note].filter(Boolean).join(' – ')
-  };
-  commitOps([
-    b => b.set(col('transactions').doc(common.jobId + '-in'), { ...common, type: 'income', amount: round2(num(e.income)), category: 'עבודה', rates }),
-    b => b.set(col('transactions').doc(common.jobId + '-out'), { ...common, type: 'expense', amount: round2(num(e.cost)), category: 'עוקבים' })
-  ]).catch(fail);
+  const jobId = editingJob || uid();
+  const common = { jobId, date: e.date.value, customerId: e.customerId.value, hours, km, note };
+  const names = trackers.map(t => t.name).join(' + ');
+  const ops = [b => b.set(col('transactions').doc(jobId + '-in'), {
+    ...common, type: 'income', amount: round2(num(e.income)), category: 'עבודה', rates, trackers, tracker: names,
+    description: [names, details, note].filter(Boolean).join(' – ')
+  })];
+  const keep = trackers.map((t, i) => {
+    const id = expenseDocId(jobId, i);
+    ops.push(b => b.set(col('transactions').doc(id), {
+      ...common, type: 'expense', amount: t.cost, category: 'עוקבים', tracker: t.name,
+      description: [t.name, details, note].filter(Boolean).join(' – ')
+    }));
+    return id;
+  });
+  // עוקב שהוסר מהעבודה – מוחקים את ההוצאה שלו
+  db.transactions.filter(t => t.jobId === jobId && t.type === 'expense' && !keep.includes(t.id))
+    .forEach(t => ops.push(b => b.delete(col('transactions').doc(t.id))));
+  commitOps(ops).catch(fail);
   const c = db.customers.find(x => x.id === common.customerId);
   if (c && (c.hourRate !== rates.cHour || c.kmRate !== rates.cKm))
     col('customers').doc(c.id).set({ hourRate: rates.cHour, kmRate: rates.cKm }, { merge: true }).catch(fail);
