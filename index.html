@@ -241,7 +241,8 @@
     <h3 id="jobTitle"></h3>
     <div class="two">
       <div class="field"><label>תאריך *</label><input name="date" type="date" required></div>
-      <div class="field"><label>לקוח *</label><select name="customerId" required></select></div>
+      <div class="field"><label>לקוח *</label><input name="customerName" list="custList" required placeholder="שם הלקוח"></div>
+      <datalist id="custList"></datalist>
     </div>
     <div id="partnerFields" hidden>
       <div class="two">
@@ -637,7 +638,10 @@ function openJob(jobId, partner) {
   e.settled.checked = !!inc.settled;
   const defaults = lastRates();
   e.date.value = inc.date || today();
-  e.customerId.innerHTML = custOptions(jobId ? inc.customerId : document.getElementById('fCust').value, '— בחרו לקוח —');
+  // מקלידים את שם הלקוח; לקוח קיים מוצע ברשימה, ושם חדש יוצר לקוח חדש בשמירה
+  e.customerName.value = custName(jobId ? inc.customerId : document.getElementById('fCust').value);
+  document.getElementById('custList').innerHTML = [...db.customers].sort((a, b) => a.name.localeCompare(b.name, 'he'))
+    .map(c => `<option value="${esc(c.name)}">`).join('');
   e.cHour.value = inc.rates?.cHour ?? defaults.cHour;
   e.cKm.value = inc.rates?.cKm ?? defaults.cKm;
   e.income.value = inc.amount ?? '';
@@ -655,7 +659,7 @@ function openJob(jobId, partner) {
     return `<option value="${esc(t)}" ${r ? `label="${r.tHour} ₪ לשעה · ${r.tKm} ₪ לק&quot;מ"` : ''}>`;
   }).join('');
   document.getElementById('clientRateHint').textContent = '';
-  if (!jobId && e.customerId.value) applyClientRates();
+  if (!jobId && e.customerName.value) applyClientRates();
   document.getElementById('jobTitle').textContent = (jobId ? 'עריכת עבודה' : partner ? 'עבודה עם' : 'עבודה עם עוקבים') + (partner ? ' ' + PARTNER : '');
   setJobMode();
   document.getElementById('jobDlg').showModal();
@@ -664,17 +668,19 @@ function openJob(jobId, partner) {
 // התעריף של לקוח נשמר בכרטיס הלקוח (כל לקוח משלם אחרת)
 function applyClientRates() {
   const e = jobForm.elements;
-  const c = db.customers.find(x => x.id === e.customerId.value);
+  const c = custByName(e.customerName.value);
   const hint = document.getElementById('clientRateHint');
   if (c && c.hourRate != null) {
     e.cHour.value = c.hourRate; e.cKm.value = c.kmRate ?? 0;
     hint.textContent = `התעריף של ${c.name} מכרטיס הלקוח. שינוי כאן יעדכן גם את הכרטיס.`;
     calcJob();
   } else {
-    hint.textContent = c ? 'ללקוח הזה עוד אין תעריף – הזינו אותו, והוא יישמר בכרטיס הלקוח.' : '';
+    hint.textContent = c ? 'ללקוח הזה עוד אין תעריף – הזינו אותו, והוא יישמר בכרטיס הלקוח.'
+      : e.customerName.value.trim() ? 'לקוח חדש – הוא יתווסף לרשימת הלקוחות בשמירה.' : '';
   }
 }
-jobForm.elements.customerId.onchange = applyClientRates;
+const custByName = name => db.customers.find(c => c.name.trim() === name.trim());
+jobForm.elements.customerName.onchange = applyClientRates;
 
 // כל עוקב מקבל לפי השעות והק"מ שלו; הלקוח משלם לפי הסך של כל העוקבים.
 // בלי שעות וק"מ – מחיר קבוע שמוקלד ידנית
@@ -725,7 +731,9 @@ jobForm.onsubmit = function (ev) {
   const detailsOf = (h, k) => [h != null && `${h} שעות`, k != null && `${k} ק"מ`].filter(Boolean).join(', ');
   const details = detailsOf(hours, km);
   const jobId = editingJob || uid();
-  const common = { jobId, date: e.date.value, customerId: e.customerId.value, hours, km, note };
+  const existing = custByName(e.customerName.value);
+  const customerId = existing ? existing.id : uid() + 'c';
+  const common = { jobId, date: e.date.value, customerId, hours, km, note };
   const names = trackers.map(t => t.name).join(' + ');
   const prefix = partner ? `${PARTNER} (${jobType})` : '';
   const ops = [b => b.set(col('transactions').doc(jobId + '-in'), {
@@ -751,10 +759,12 @@ jobForm.onsubmit = function (ev) {
   // עובד שהוסר מהעבודה – מוחקים את ההוצאה שלו
   db.transactions.filter(t => t.jobId === jobId && t.id !== jobId + '-in' && !keep.includes(t.id))
     .forEach(t => ops.push(b => b.delete(col('transactions').doc(t.id))));
+  // תעריף הלקוח נשמר רק בעבודה לפי שעות וק"מ
+  const rateData = document.getElementById('jobDlg').dataset.mode === 'fixed' ? {} : { hourRate: rates.cHour, kmRate: rates.cKm };
+  if (!existing) ops.push(b => b.set(col('customers').doc(customerId), { name: e.customerName.value.trim(), ...rateData }));
+  else if (rateData.hourRate !== undefined && (existing.hourRate !== rates.cHour || existing.kmRate !== rates.cKm))
+    ops.push(b => b.set(col('customers').doc(customerId), rateData, { merge: true }));
   commitOps(ops).catch(fail);
-  const c = db.customers.find(x => x.id === common.customerId);
-  if (c && (c.hourRate !== rates.cHour || c.kmRate !== rates.cKm))
-    col('customers').doc(c.id).set({ hourRate: rates.cHour, kmRate: rates.cKm }, { merge: true }).catch(fail);
 };
 
 function exportCsv() {
