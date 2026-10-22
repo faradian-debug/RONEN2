@@ -1,0 +1,456 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>רונן 2 – ניהול עסק</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #fff; --text: #1d2330; --muted: #6b7280; --line: #e3e6eb;
+    --accent: #2563eb; --income: #15803d; --expense: #b91c1c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171c; --card: #1d2128; --text: #e7e9ee; --muted: #9aa1ad; --line: #2e333c;
+      --accent: #60a5fa; --income: #4ade80; --expense: #f87171;
+    }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; font-family: "Segoe UI", Arial, sans-serif; background: var(--bg); color: var(--text); }
+  header { background: var(--card); border-bottom: 1px solid var(--line); padding: 12px 16px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  header h1 { font-size: 20px; margin: 0; margin-inline-end: auto; }
+  .user { font-size: 13px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+  nav button { background: none; border: none; color: var(--muted); font-size: 15px; padding: 8px 12px; cursor: pointer; border-radius: 6px; }
+  nav button.active { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); font-weight: 600; }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px; }
+  section { display: none; }
+  section.active { display: block; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  .center { max-width: 380px; margin: 12vh auto; text-align: center; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .stat .label { color: var(--muted); font-size: 13px; }
+  .stat .value { font-size: 26px; font-weight: 700; margin-top: 4px; }
+  .income { color: var(--income); } .expense { color: var(--expense); }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+  .toolbar h2 { margin: 0; font-size: 18px; margin-inline-end: auto; }
+  input, select, textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; }
+  button.btn { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 6px; padding: 7px 12px; cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.link { background: none; border: none; color: var(--accent); cursor: pointer; padding: 2px 4px; font: inherit; }
+  button.link.danger { color: var(--expense); }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: right; padding: 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; }
+  td.num { font-variant-numeric: tabular-nums; }
+  .empty { color: var(--muted); text-align: center; padding: 24px; }
+  dialog { border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--text); padding: 20px; width: min(440px, 92vw); }
+  dialog::backdrop { background: rgba(0,0,0,.4); }
+  dialog h3 { margin-top: 0; }
+  .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+  .field label { font-size: 13px; color: var(--muted); }
+  .actions { display: flex; gap: 8px; justify-content: flex-start; margin-top: 14px; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .bars { display: flex; flex-direction: column; gap: 6px; }
+  .bar-row { display: grid; grid-template-columns: 70px 1fr; gap: 8px; align-items: center; font-size: 13px; }
+  .bar-pair { display: flex; flex-direction: column; gap: 2px; }
+  .bar { height: 9px; border-radius: 3px; min-width: 2px; }
+  .bar.in { background: var(--income); } .bar.out { background: var(--expense); }
+  .legend { font-size: 13px; color: var(--muted); display: flex; gap: 14px; margin-bottom: 8px; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-inline-end: 4px; }
+</style>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script src="firebase-config.js"></script>
+</head>
+<body>
+
+<!-- מסך התחברות -->
+<div id="login" hidden>
+  <div class="card center">
+    <h1 style="font-size:22px">רונן 2 – ניהול עסק</h1>
+    <p>יש להתחבר כדי לראות את הנתונים</p>
+    <button class="btn primary" id="loginBtn">התחברות עם Google</button>
+    <p id="loginErr" class="expense"></p>
+  </div>
+</div>
+<div id="loading" class="center">טוען...</div>
+
+<div id="app" hidden>
+<header>
+  <h1>רונן 2 – ניהול עסק</h1>
+  <nav>
+    <button data-tab="dash" class="active">סקירה</button>
+    <button data-tab="tx">הכנסות והוצאות</button>
+    <button data-tab="cust">לקוחות</button>
+    <button data-tab="backup">גיבוי</button>
+  </nav>
+  <div class="user"><span id="userName"></span><button class="link" id="logoutBtn">יציאה</button></div>
+</header>
+
+<main>
+  <!-- סקירה -->
+  <section id="dash" class="active">
+    <div class="toolbar">
+      <h2>סקירה</h2>
+      <label>שנה <select id="dashYear"></select></label>
+    </div>
+    <div class="stats">
+      <div class="card stat"><div class="label">הכנסות</div><div class="value income" id="sIncome"></div></div>
+      <div class="card stat"><div class="label">הוצאות</div><div class="value expense" id="sExpense"></div></div>
+      <div class="card stat"><div class="label">רווח</div><div class="value" id="sProfit"></div></div>
+      <div class="card stat"><div class="label">לקוחות</div><div class="value" id="sCust"></div></div>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">לפי חודש</h3>
+      <div class="legend"><span><span class="dot" style="background:var(--income)"></span>הכנסות</span><span><span class="dot" style="background:var(--expense)"></span>הוצאות</span></div>
+      <div class="bars" id="monthBars"></div>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">הכנסות לפי לקוח</h3>
+      <div class="table-wrap"><table id="topCust"></table></div>
+    </div>
+  </section>
+
+  <!-- תנועות -->
+  <section id="tx">
+    <div class="toolbar">
+      <h2>הכנסות והוצאות</h2>
+      <button class="btn primary" onclick="openTx('income')">+ הכנסה</button>
+      <button class="btn primary" onclick="openTx('expense')">+ הוצאה</button>
+    </div>
+    <div class="toolbar">
+      <select id="fType"><option value="">הכל</option><option value="income">הכנסות</option><option value="expense">הוצאות</option></select>
+      <input type="month" id="fMonth" title="חודש">
+      <select id="fCust"></select>
+      <input id="fSearch" placeholder="חיפוש...">
+      <button class="btn" onclick="exportCsv()">ייצוא ל-Excel (CSV)</button>
+    </div>
+    <div class="card">
+      <div class="table-wrap"><table id="txTable"></table></div>
+      <div id="txTotals" style="margin-top:10px;font-weight:600"></div>
+    </div>
+  </section>
+
+  <!-- לקוחות -->
+  <section id="cust">
+    <div class="toolbar">
+      <h2>לקוחות</h2>
+      <input id="cSearch" placeholder="חיפוש לקוח...">
+      <button class="btn primary" onclick="openCust()">+ לקוח חדש</button>
+    </div>
+    <div class="card"><div class="table-wrap"><table id="custTable"></table></div></div>
+  </section>
+
+  <!-- גיבוי -->
+  <section id="backup">
+    <div class="card">
+      <h2 style="margin-top:0">גיבוי ושחזור</h2>
+      <p>הנתונים נשמרים בענן (Firebase) ומסונכרנים בין כל המכשירים שמחוברים לאותו חשבון. אפשר גם להוריד עותק לגיבוי.</p>
+      <div class="toolbar">
+        <button class="btn primary" onclick="downloadBackup()">הורדת גיבוי</button>
+        <label class="btn">שחזור מגיבוי <input type="file" accept=".json" id="restoreFile" hidden></label>
+      </div>
+    </div>
+  </section>
+</main>
+</div>
+
+<!-- חלון לקוח -->
+<dialog id="custDlg">
+  <form method="dialog" id="custForm">
+    <h3 id="custTitle">לקוח חדש</h3>
+    <div class="field"><label>שם *</label><input name="name" required></div>
+    <div class="two">
+      <div class="field"><label>טלפון</label><input name="phone" type="tel"></div>
+      <div class="field"><label>אימייל</label><input name="email" type="email"></div>
+    </div>
+    <div class="field"><label>כתובת</label><input name="address"></div>
+    <div class="field"><label>הערות</label><textarea name="notes" rows="3"></textarea></div>
+    <div class="actions">
+      <button class="btn primary" value="save">שמירה</button>
+      <button class="btn" value="cancel" formnovalidate>ביטול</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- חלון תנועה -->
+<dialog id="txDlg">
+  <form method="dialog" id="txForm">
+    <h3 id="txTitle"></h3>
+    <div class="two">
+      <div class="field"><label>תאריך *</label><input name="date" type="date" required></div>
+      <div class="field"><label>סכום (₪) *</label><input name="amount" type="number" step="0.01" min="0" required></div>
+    </div>
+    <div class="field"><label>לקוח</label><select name="customerId"></select></div>
+    <div class="field"><label>קטגוריה</label><input name="category" list="catList"></div>
+    <datalist id="catList"></datalist>
+    <div class="field"><label>תיאור</label><input name="description"></div>
+    <div class="actions">
+      <button class="btn primary" value="save">שמירה</button>
+      <button class="btn" value="cancel" formnovalidate>ביטול</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+const DEFAULT_CATS = {
+  income: ['מכירה', 'שירות', 'מקדמה', 'אחר'],
+  expense: ['חומרים', 'שכירות', 'דלק ורכב', 'משכורות', 'שיווק', 'ציוד', 'חשבונות', 'אחר']
+};
+const MONTHS = ['ינו', 'פבר', 'מרץ', 'אפר', 'מאי', 'יוני', 'יולי', 'אוג', 'ספט', 'אוק', 'נוב', 'דצמ'];
+
+// ---------- Firebase ----------
+firebase.initializeApp(window.FIREBASE_CONFIG);
+const auth = firebase.auth();
+const fs = firebase.firestore();
+fs.enablePersistence({ synchronizeTabs: true }).catch(() => {}); // עבודה גם בלי אינטרנט
+
+let db = { customers: [], transactions: [] };
+let user = null, unsub = [];
+let editingCust = null, editingTx = null, txType = 'income';
+
+const col = name => fs.collection('users').doc(user.uid).collection(name);
+const fail = e => alert('שמירה נכשלה: ' + e.message);
+const show = id => ['login', 'loading', 'app'].forEach(x => document.getElementById(x).hidden = x !== id);
+
+auth.onAuthStateChanged(u => {
+  unsub.forEach(f => f()); unsub = [];
+  user = u; db = { customers: [], transactions: [] };
+  if (!u) { show('login'); return; }
+  document.getElementById('userName').textContent = u.displayName || u.email;
+  show('loading');
+  const loaded = new Set();
+  ['customers', 'transactions'].forEach(name => unsub.push(col(name).onSnapshot(snap => {
+    db[name] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    loaded.add(name);
+    if (loaded.size === 2) { show('app'); renderAll(); }
+  }, err => alert('שגיאה בטעינת הנתונים: ' + err.message))));
+});
+document.getElementById('loginBtn').onclick = () => {
+  document.getElementById('loginErr').textContent = '';
+  auth.signInWithPopup(new firebase.auth.GoogleAuthProvider())
+    .catch(e => document.getElementById('loginErr').textContent = 'ההתחברות נכשלה: ' + e.message);
+};
+document.getElementById('logoutBtn').onclick = () => auth.signOut();
+
+// כתיבה של הרבה מסמכים במנות (מגבלת Firestore: 500 פעולות למנה)
+async function commitOps(ops) {
+  for (let i = 0; i < ops.length; i += 450) {
+    const b = fs.batch();
+    ops.slice(i, i + 450).forEach(op => op(b));
+    await b.commit();
+  }
+}
+
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const money = n => '₪' + n.toLocaleString('he-IL', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const custName = id => db.customers.find(c => c.id === id)?.name || '';
+const fmtDate = d => d ? d.split('-').reverse().join('/') : '';
+
+// ניווט
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('nav button, section').forEach(x => x.classList.remove('active'));
+  b.classList.add('active');
+  document.getElementById(b.dataset.tab).classList.add('active');
+});
+
+// ---------- סקירה ----------
+function renderDash() {
+  const sel = document.getElementById('dashYear');
+  const years = [...new Set(db.transactions.map(t => t.date.slice(0, 4)).concat(String(new Date().getFullYear())))].sort().reverse();
+  const cur = sel.value || years[0];
+  sel.innerHTML = years.map(y => `<option ${y === cur ? 'selected' : ''}>${y}</option>`).join('');
+  const txs = db.transactions.filter(t => t.date.startsWith(cur));
+  const inc = txs.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+  const exp = txs.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+  document.getElementById('sIncome').textContent = money(inc);
+  document.getElementById('sExpense').textContent = money(exp);
+  const p = document.getElementById('sProfit');
+  p.textContent = money(inc - exp);
+  p.className = 'value ' + (inc - exp >= 0 ? 'income' : 'expense');
+  document.getElementById('sCust').textContent = db.customers.length;
+
+  const m = MONTHS.map(() => ({ in: 0, out: 0 }));
+  txs.forEach(t => { const i = +t.date.slice(5, 7) - 1; m[i][t.type === 'income' ? 'in' : 'out'] += t.amount; });
+  const max = Math.max(1, ...m.map(x => Math.max(x.in, x.out)));
+  document.getElementById('monthBars').innerHTML = m.map((x, i) => `
+    <div class="bar-row" title="הכנסות ${money(x.in)} | הוצאות ${money(x.out)}">
+      <span>${MONTHS[i]}</span>
+      <div class="bar-pair">
+        <div class="bar in" style="width:${x.in / max * 100}%"></div>
+        <div class="bar out" style="width:${x.out / max * 100}%"></div>
+      </div>
+    </div>`).join('');
+
+  const byCust = {};
+  txs.filter(t => t.type === 'income' && t.customerId).forEach(t => byCust[t.customerId] = (byCust[t.customerId] || 0) + t.amount);
+  const rows = Object.entries(byCust).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  document.getElementById('topCust').innerHTML = rows.length
+    ? '<tr><th>לקוח</th><th>הכנסות</th></tr>' + rows.map(([id, v]) => `<tr><td>${esc(custName(id))}</td><td class="num income">${money(v)}</td></tr>`).join('')
+    : '<tr><td class="empty">אין עדיין הכנסות משויכות ללקוחות בשנה זו</td></tr>';
+}
+document.getElementById('dashYear').onchange = renderDash;
+
+// ---------- לקוחות ----------
+function renderCust() {
+  const q = document.getElementById('cSearch').value.trim().toLowerCase();
+  const list = db.customers.filter(c => !q || [c.name, c.phone, c.email, c.address].join(' ').toLowerCase().includes(q))
+    .sort((a, b) => a.name.localeCompare(b.name, 'he'));
+  const t = document.getElementById('custTable');
+  if (!list.length) { t.innerHTML = `<tr><td class="empty">${db.customers.length ? 'לא נמצאו לקוחות' : 'עדיין אין לקוחות. לחצו "+ לקוח חדש"'}</td></tr>`; return; }
+  t.innerHTML = '<tr><th>שם</th><th>טלפון</th><th>אימייל</th><th>כתובת</th><th>סה"כ הכנסות</th><th>הערות</th><th></th></tr>' +
+    list.map(c => {
+      const total = db.transactions.filter(x => x.customerId === c.id && x.type === 'income').reduce((s, x) => s + x.amount, 0);
+      return `<tr>
+        <td><b>${esc(c.name)}</b></td>
+        <td>${c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>` : ''}</td>
+        <td>${c.email ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : ''}</td>
+        <td>${esc(c.address)}</td>
+        <td class="num income">${money(total)}</td>
+        <td style="white-space:normal;max-width:220px">${esc(c.notes)}</td>
+        <td><button class="link" onclick="showCustTx('${c.id}')">תנועות</button>
+            <button class="link" onclick="openCust('${c.id}')">עריכה</button>
+            <button class="link danger" onclick="delCust('${c.id}')">מחיקה</button></td>
+      </tr>`;
+    }).join('');
+}
+document.getElementById('cSearch').oninput = renderCust;
+
+function openCust(id) {
+  editingCust = id || null;
+  const f = document.getElementById('custForm'), c = db.customers.find(x => x.id === id) || {};
+  ['name', 'phone', 'email', 'address', 'notes'].forEach(k => f.elements[k].value = c[k] || '');
+  document.getElementById('custTitle').textContent = id ? 'עריכת לקוח' : 'לקוח חדש';
+  document.getElementById('custDlg').showModal();
+}
+document.getElementById('custForm').onsubmit = function (e) {
+  if (e.submitter?.value !== 'save') return;
+  const f = this;
+  const data = Object.fromEntries(['name', 'phone', 'email', 'address', 'notes'].map(k => [k, f.elements[k].value.trim()]));
+  col('customers').doc(editingCust || uid()).set(data, { merge: true }).catch(fail);
+};
+function delCust(id) {
+  const linked = db.transactions.filter(t => t.customerId === id);
+  if (!confirm(`למחוק את ${custName(id)}?` + (linked.length ? `\n${linked.length} תנועות יישארו, ללא שיוך ללקוח.` : ''))) return;
+  commitOps([b => b.delete(col('customers').doc(id))]
+    .concat(linked.map(t => b => b.update(col('transactions').doc(t.id), { customerId: '' })))).catch(fail);
+}
+function showCustTx(id) {
+  document.getElementById('fCust').value = id;
+  document.getElementById('fMonth').value = '';
+  document.querySelector('nav button[data-tab="tx"]').click();
+  renderTx();
+}
+
+// ---------- תנועות ----------
+function custOptions(selected, blank) {
+  return `<option value="">${blank}</option>` + [...db.customers].sort((a, b) => a.name.localeCompare(b.name, 'he'))
+    .map(c => `<option value="${c.id}" ${c.id === selected ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+}
+function renderTx() {
+  const fc = document.getElementById('fCust'), cv = fc.value;
+  fc.innerHTML = custOptions(cv, 'כל הלקוחות');
+  const type = document.getElementById('fType').value, month = document.getElementById('fMonth').value;
+  const q = document.getElementById('fSearch').value.trim().toLowerCase();
+  const list = filteredTx(type, month, cv, q);
+  const t = document.getElementById('txTable');
+  if (!list.length) {
+    t.innerHTML = `<tr><td class="empty">${db.transactions.length ? 'אין תנועות שתואמות לסינון' : 'עדיין אין תנועות. הוסיפו הכנסה או הוצאה'}</td></tr>`;
+    document.getElementById('txTotals').textContent = '';
+    return;
+  }
+  t.innerHTML = '<tr><th>תאריך</th><th>סוג</th><th>סכום</th><th>לקוח</th><th>קטגוריה</th><th>תיאור</th><th></th></tr>' +
+    list.map(x => `<tr>
+      <td>${fmtDate(x.date)}</td>
+      <td class="${x.type}">${x.type === 'income' ? 'הכנסה' : 'הוצאה'}</td>
+      <td class="num ${x.type}">${money(x.amount)}</td>
+      <td>${esc(custName(x.customerId))}</td>
+      <td>${esc(x.category)}</td>
+      <td style="white-space:normal">${esc(x.description)}</td>
+      <td><button class="link" onclick="openTx('${x.type}','${x.id}')">עריכה</button>
+          <button class="link danger" onclick="delTx('${x.id}')">מחיקה</button></td>
+    </tr>`).join('');
+  const inc = list.filter(x => x.type === 'income').reduce((s, x) => s + x.amount, 0);
+  const exp = list.filter(x => x.type === 'expense').reduce((s, x) => s + x.amount, 0);
+  document.getElementById('txTotals').innerHTML =
+    `הכנסות: <span class="income">${money(inc)}</span> &nbsp;|&nbsp; הוצאות: <span class="expense">${money(exp)}</span> &nbsp;|&nbsp; רווח: <span class="${inc - exp >= 0 ? 'income' : 'expense'}">${money(inc - exp)}</span>`;
+}
+function filteredTx(type, month, cust, q) {
+  return db.transactions
+    .filter(x => (!type || x.type === type) && (!month || x.date.startsWith(month)) && (!cust || x.customerId === cust) &&
+      (!q || [x.description, x.category, custName(x.customerId)].join(' ').toLowerCase().includes(q)))
+    .sort((a, b) => b.date.localeCompare(a.date));
+}
+['fType', 'fMonth', 'fCust'].forEach(id => document.getElementById(id).onchange = renderTx);
+document.getElementById('fSearch').oninput = renderTx;
+
+function openTx(type, id) {
+  txType = type; editingTx = id || null;
+  const f = document.getElementById('txForm'), x = db.transactions.find(t => t.id === id) || {};
+  f.elements.date.value = x.date || new Date().toISOString().slice(0, 10);
+  f.elements.amount.value = x.amount ?? '';
+  f.elements.customerId.innerHTML = custOptions(x.customerId || '', '— ללא —');
+  f.elements.category.value = x.category || '';
+  f.elements.description.value = x.description || '';
+  const used = db.transactions.filter(t => t.type === type).map(t => t.category).filter(Boolean);
+  document.getElementById('catList').innerHTML = [...new Set(DEFAULT_CATS[type].concat(used))].map(c => `<option value="${esc(c)}">`).join('');
+  document.getElementById('txTitle').textContent = (id ? 'עריכת ' : '') + (type === 'income' ? 'הכנסה' : 'הוצאה');
+  document.getElementById('txDlg').showModal();
+}
+document.getElementById('txForm').onsubmit = function (e) {
+  if (e.submitter?.value !== 'save') return;
+  const f = this;
+  const data = {
+    type: txType, date: f.elements.date.value, amount: Math.round(parseFloat(f.elements.amount.value) * 100) / 100,
+    customerId: f.elements.customerId.value, category: f.elements.category.value.trim(), description: f.elements.description.value.trim()
+  };
+  col('transactions').doc(editingTx || uid()).set(data, { merge: true }).catch(fail);
+};
+function delTx(id) {
+  if (!confirm('למחוק את התנועה?')) return;
+  col('transactions').doc(id).delete().catch(fail);
+}
+
+function exportCsv() {
+  const list = filteredTx(document.getElementById('fType').value, document.getElementById('fMonth').value,
+    document.getElementById('fCust').value, document.getElementById('fSearch').value.trim().toLowerCase());
+  const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+  const rows = [['תאריך', 'סוג', 'סכום', 'לקוח', 'קטגוריה', 'תיאור']]
+    .concat(list.map(x => [fmtDate(x.date), x.type === 'income' ? 'הכנסה' : 'הוצאה', x.amount, custName(x.customerId), x.category, x.description]));
+  download('﻿' + rows.map(r => r.map(q).join(',')).join('\r\n'), `תנועות-${today()}.csv`, 'text/csv');
+}
+
+// ---------- גיבוי ----------
+const today = () => new Date().toISOString().slice(0, 10);
+function download(text, name, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+function downloadBackup() { download(JSON.stringify(db, null, 2), `גיבוי-רונן2-${today()}.json`, 'application/json'); }
+document.getElementById('restoreFile').onchange = async e => {
+  const file = e.target.files[0]; if (!file) return;
+  try {
+    const d = JSON.parse(await file.text());
+    if (!Array.isArray(d.customers) || !Array.isArray(d.transactions)) throw new Error('קובץ לא תקין');
+    if (!confirm(`לשחזר ${d.customers.length} לקוחות ו-${d.transactions.length} תנועות? הנתונים הנוכחיים בענן יוחלפו.`)) return;
+    const ops = [];
+    ['customers', 'transactions'].forEach(name => {
+      db[name].forEach(x => ops.push(b => b.delete(col(name).doc(x.id))));
+      d[name].forEach(({ id, ...rest }) => ops.push(b => b.set(col(name).doc(id || uid()), rest)));
+    });
+    await commitOps(ops);
+    alert('השחזור הושלם');
+  } catch (err) { alert('שגיאה בשחזור: ' + err.message); }
+  e.target.value = '';
+};
+
+function renderAll() { renderDash(); renderCust(); renderTx(); }
+</script>
+</body>
+</html>
