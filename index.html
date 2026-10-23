@@ -168,6 +168,10 @@
         <button class="btn primary" onclick="downloadBackup()">הורדת גיבוי</button>
         <label class="btn">שחזור מגיבוי <input type="file" accept=".json" id="restoreFile" hidden></label>
       </div>
+      <p>ייבוא פרוייקטים מוסיף פרוייקטים מקובץ, בלי למחוק את מה שכבר קיים.</p>
+      <div class="toolbar">
+        <label class="btn">ייבוא פרוייקטים (הוספה) <input type="file" accept=".json" id="importFile" hidden></label>
+      </div>
     </div>
   </section>
 </main>
@@ -977,6 +981,30 @@ document.getElementById('restoreFile').onchange = async e => {
     await commitOps(ops);
     alert('השחזור הושלם');
   } catch (err) { alert('שגיאה בשחזור: ' + err.message); }
+  e.target.value = '';
+};
+
+// ייבוא שמוסיף פרוייקטים ופעילויות. המזהים נשמרים, כך שייבוא חוזר של אותו קובץ לא יוצר כפילויות.
+// פרוייקט אחר עם אותו שם (באותה רשימה) לא נדרס – מדלגים עליו.
+document.getElementById('importFile').onchange = async e => {
+  const file = e.target.files[0]; if (!file) return;
+  try {
+    const d = JSON.parse(await file.text());
+    if (!Array.isArray(d.projects)) throw new Error('קובץ לא תקין');
+    const ops = [], added = [], skipped = [];
+    let acts = 0;
+    d.projects.forEach(({ id, ...p }) => {
+      if (db.projects.some(x => x.owner === p.owner && x.name.trim() === p.name.trim() && x.id !== id)) { skipped.push(p.name); return; }
+      added.push(p.name);
+      ops.push(b => b.set(col('projects').doc(id), p));
+      (d.activities || []).filter(a => a.projectId === id).forEach(({ id: aid, ...a }) => { acts++; ops.push(b => b.set(col('activities').doc(aid), a)); });
+    });
+    if (!added.length) { alert('לא נוסף כלום – כבר יש פרוייקט בשם: ' + skipped.join(', ')); return; }
+    if (!confirm(`להוסיף ${added.length} פרוייקטים (${added.join(', ')}) עם ${acts} פעילויות?` +
+      (skipped.length ? `\nידלג על: ${skipped.join(', ')} (כבר יש פרוייקט בשם הזה)` : ''))) return;
+    await commitOps(ops);
+    alert('הייבוא הושלם');
+  } catch (err) { alert('שגיאה בייבוא: ' + err.message); }
   e.target.value = '';
 };
 
