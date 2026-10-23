@@ -225,8 +225,7 @@
       <div class="field"><label>סכום (₪) *</label><input name="amount" type="number" step="0.01" min="0" required></div>
     </div>
     <div class="field"><label>לקוח</label><input name="customerName" list="custList" placeholder="שם הלקוח (לא חובה)"></div>
-    <div class="field"><label>קטגוריה</label><input name="category" list="catList"></div>
-    <datalist id="catList"></datalist>
+    <div class="field"><label>שם הפרוייקט</label><input name="category" autocomplete="off"></div>
     <div class="field"><label>תיאור</label><input name="description"></div>
     <div class="actions">
       <button class="btn primary" value="save">שמירה</button>
@@ -273,10 +272,6 @@
 </dialog>
 
 <script>
-const DEFAULT_CATS = {
-  income: ['מכירה', 'שירות', 'מקדמה', 'אחר'],
-  expense: ['חומרים', 'שכירות', 'דלק ורכב', 'משכורות', 'שיווק', 'ציוד', 'חשבונות', 'אחר']
-};
 const MONTHS = ['ינו', 'פבר', 'מרץ', 'אפר', 'מאי', 'יוני', 'יולי', 'אוג', 'ספט', 'אוק', 'נוב', 'דצמ'];
 
 // ---------- Firebase ----------
@@ -455,7 +450,7 @@ function renderTx() {
     document.getElementById('txTotals').textContent = '';
     return;
   }
-  t.innerHTML = '<tr><th>תאריך</th><th>סוג</th><th>סכום</th><th>לקוח</th><th>קטגוריה</th><th>תיאור</th><th></th></tr>' +
+  t.innerHTML = '<tr><th>תאריך</th><th>סוג</th><th>סכום</th><th>לקוח</th><th>שם הפרוייקט</th><th>תיאור</th><th></th></tr>' +
     list.map(x => `<tr>
       <td>${fmtDate(x.date)}</td>
       <td class="${x.type}">${x.type === 'income' ? 'הכנסה' : 'הוצאה'}</td>
@@ -507,8 +502,6 @@ function openTx(type, id) {
   fillCustList();
   f.elements.category.value = x.category || '';
   f.elements.description.value = x.description || '';
-  const used = db.transactions.filter(t => t.type === type).map(t => t.category).filter(Boolean);
-  document.getElementById('catList').innerHTML = [...new Set(DEFAULT_CATS[type].concat(used))].map(c => `<option value="${esc(c)}">`).join('');
   document.getElementById('txTitle').textContent = (id ? 'עריכת ' : '') + (type === 'income' ? 'הכנסה' : 'הוצאה');
   document.getElementById('txDlg').showModal();
 }
@@ -788,7 +781,7 @@ function exportCsv() {
   const list = filteredTx(document.getElementById('fType').value, document.getElementById('fMonth').value,
     document.getElementById('fCust').value, document.getElementById('fSearch').value.trim().toLowerCase());
   const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
-  const rows = [['תאריך', 'סוג', 'סכום', 'לקוח', 'קטגוריה', 'תיאור']]
+  const rows = [['תאריך', 'סוג', 'סכום', 'לקוח', 'שם הפרוייקט', 'תיאור']]
     .concat(list.map(x => [fmtDate(x.date), x.type === 'income' ? 'הכנסה' : 'הוצאה', x.amount, custName(x.customerId), x.category, x.description]));
   download('﻿' + rows.map(r => r.map(q).join(',')).join('\r\n'), `תנועות-${today()}.csv`, 'text/csv');
 }
