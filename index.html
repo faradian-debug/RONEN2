@@ -454,7 +454,21 @@ function renderProjects(owner) {
 }
 
 // ---------- דף פרוייקט ----------
-function activityDetail(a) {
+// התשלומים בפועל לעובד בפרוייקט, לפי תאריך
+const paymentsTo = (acts, role, name) => acts.filter(a => a.kind === 'payment' && a.payeeRole === role && a.payee === name)
+  .sort((a, b) => a.date.localeCompare(b.date));
+const paymentsText = (list, alon) => list.map(a => `${fmtDate(a.date)} ${money(a.amount)}${alon ? ` (${a.paidBy === 'me' ? 'אני' : 'אלון'})` : ''}`).join(' · ');
+
+function activityDetail(a, s, p) {
+  // מדובבים: מתחת לכל מדובב – כמה שולם לו ומתי, וכמה נשאר
+  if (a.kind === 'elicitor' && s) return (a.people || []).map(x => {
+    const i = s.people.findIndex(o => o.role === 'elicitor' && o.name === x.name), o = s.people[i];
+    const paid = paymentsTo(s.acts, 'elicitor', x.name);
+    return `<div style="margin-bottom:6px"><b>${esc(x.name)}</b> – סוכם ${money(x.cost)}
+      <div class="hint">${paid.length ? paid.map(a => 'שולם ' + paymentsText([a], p.owner === 'alon')).join('<br>') : 'עוד לא שולם'}
+        <br>${o.remaining > 0 ? `<span class="expense">נשאר ${money(o.remaining)}</span>` : 'שולם הכל'}
+        ${o.remaining > 0 ? ` <button class="link" onclick="openPayment('${p.id}', ${i})">+ תשלום</button>` : ''}</div></div>`;
+  }).join('') + (a.note ? esc(a.note) : '');
   if (a.kind === 'income') return [!isReceived(a) && '<span class="expense">צפוי – עוד לא התקבל</span>', a.note && esc(a.note)].filter(Boolean).join('<br>');
   if (a.kind === 'payment') return `ל${esc(a.payee)} (${ROLE[a.payeeRole] || ''})` + (a.note ? '<br>' + esc(a.note) : '');
   const people = (a.people || []).map(x => {
@@ -519,12 +533,13 @@ function renderProjectDetail(p, el) {
     ${s.people.length ? `<div class="card">
       <h3 style="margin-top:0">תשלומים לעוקבים ולמדובבים</h3>
       <div class="table-wrap"><table>
-        <tr><th>שם</th><th>תפקיד</th><th>מגיע לו</th><th>שולם</th><th>נשאר לשלם</th><th></th></tr>
+        <tr><th>שם</th><th>תפקיד</th><th>מגיע לו</th><th>שולם</th><th>מתי שולם</th><th>נשאר לשלם</th><th></th></tr>
         ${s.people.map((x, i) => `<tr>
           <td><b>${esc(x.name)}</b></td>
           <td>${ROLE[x.role]}</td>
           <td class="num">${money(x.owed)}</td>
           <td class="num">${money(x.paid)}</td>
+          <td class="wrap" style="font-size:13px">${paymentsTo(s.acts, x.role, x.name).map(a => paymentsText([a], alon)).join('<br>') || '<span class="muted">–</span>'}</td>
           <td class="num ${x.remaining > 0 ? 'expense' : x.remaining < 0 ? 'income' : 'muted'}"><b>${x.remaining ? money(x.remaining) : 'שולם הכל'}</b></td>
           <td><button class="link" onclick="openPayment('${p.id}', ${i})">+ תשלום</button></td>
         </tr>`).join('')}
@@ -533,7 +548,7 @@ function renderProjectDetail(p, el) {
       ? `<tr><th>תאריך</th><th>פעילות</th><th>פירוט</th><th>סכום</th>${alon ? '<th>אצל מי</th>' : ''}<th></th></tr>` + acts.map(a => `<tr>
           <td>${fmtDate(a.date)}</td>
           <td class="${kindClass(a.kind)}">${a.kind === 'payment' ? 'תשלום' : KINDS[a.kind]}</td>
-          <td class="wrap">${activityDetail(a)}</td>
+          <td class="wrap">${activityDetail(a, s, p)}</td>
           <td class="num ${kindClass(a.kind)}">${money(a.amount)}</td>
           ${alon ? `<td>${MONEY_KINDS.includes(a.kind) ? `${a.kind === 'income' ? 'קיבל' : 'שילם'}: ${a.paidBy === 'me' ? 'אני' : 'אלון'}` : '<span class="muted">–</span>'}</td>` : ''}
           <td><button class="link" onclick="openActivity('${p.id}','${a.kind}','${a.id}')">עריכה</button>
