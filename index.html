@@ -71,10 +71,10 @@
   .person .head { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
   .hint { font-size: 12px; color: var(--muted); margin: 0; }
   #actDlg[data-kind="elicitor"] .rate-only { display: none; }
-  .type-pick { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 8px; margin-bottom: 12px; }
+  .type-pick { display: grid; grid-template-columns: repeat(auto-fit, minmax(76px, 1fr)); gap: 6px; margin-bottom: 12px; }
   .type-pick label { position: relative; cursor: pointer; }
   .type-pick input { position: absolute; opacity: 0; inset: 0; }
-  .type-pick span { display: block; text-align: center; padding: 9px 4px; border: 1px solid var(--line); border-radius: 8px; font-weight: 600; font-size: 14px; color: var(--muted); }
+  .type-pick span { display: flex; align-items: center; justify-content: center; height: 100%; text-align: center; padding: 8px 4px; border: 1px solid var(--line); border-radius: 8px; font-weight: 600; font-size: 13px; color: var(--muted); }
   .type-pick input[value="income"]:checked + span { border-color: var(--income); color: var(--income); background: color-mix(in srgb, var(--income) 12%, transparent); }
   .type-pick input:not([value="income"]):checked + span { border-color: var(--expense); color: var(--expense); background: color-mix(in srgb, var(--expense) 12%, transparent); }
   .type-pick input:focus-visible + span { outline: 2px solid var(--accent); }
@@ -179,6 +179,7 @@
     <h3 id="projTitle"></h3>
     <div class="field"><label>שם הפרוייקט *</label><input name="name" required autocomplete="off"></div>
     <div class="field"><label>לקוח</label><input name="client" placeholder="שם הלקוח" autocomplete="off"></div>
+    <div class="field"><label>המחיר שסוכם עם הלקוח (₪)</label><input name="price" type="number" step="0.01" min="0" placeholder="לא חובה"></div>
     <div class="two">
       <div class="field"><label>תאריך פתיחה *</label><input name="startDate" type="date" required></div>
       <div class="field"><label>סטטוס</label><select name="status"><option value="open">פתוח</option><option value="closed">סגור</option></select></div>
@@ -217,6 +218,16 @@
       <div id="peopleTotal" style="font-weight:600;margin-bottom:10px"></div>
     </div>
     <div class="field" id="amountField"><label id="amountLabel"></label><input name="amount" type="number" step="0.01" min="0"></div>
+    <div id="installField">
+      <div class="two">
+        <div class="field"><label>מספר תשלומים</label><input name="installments" type="number" min="1" max="36" step="1"></div>
+        <div class="field" id="intervalField"><label>מרווח בין תשלומים</label>
+          <select name="interval"><option value="month">כל חודש</option><option value="2weeks">כל שבועיים</option><option value="week">כל שבוע</option></select></div>
+      </div>
+      <p id="installPreview" class="hint" style="margin:-4px 0 10px"></p>
+    </div>
+    <div class="field" id="receivedField"><label>סטטוס</label>
+      <select name="received"><option value="yes">התקבל</option><option value="no">צפוי – עוד לא התקבל</option></select></div>
     <div class="field"><label>הערה / תיאור</label><input name="note" autocomplete="off"></div>
     <div class="actions">
       <button class="btn primary" value="save">שמירה</button>
@@ -325,19 +336,27 @@ function goTab(tab) {
 // ---------- חישובי פרוייקט ----------
 // פרוייקט עם אלון: הרווח (תקבולים פחות הוצאות) מתחלק לפי split (ברירת מחדל 50%).
 // בתקבולים ובתשלומים נרשם אצל מי הכסף (paidBy); היתרה = החלק שלי פחות מה שכבר אצלי.
+// תשלום מהלקוח יכול להיות "צפוי" (received: false) – נכנס למחיר אבל לא לכסף שהתקבל.
+// הרווח מחושב לפי המחיר שסוכם (price), ואם לא הוזן – לפי כל התשלומים מהלקוח.
+const isReceived = a => a.received !== false;
 function projectStats(p) {
   const acts = db.activities.filter(a => a.projectId === p.id);
   const by = k => sum(acts.filter(a => a.kind === k), a => a.amount);
-  const s = { acts, income: by('income'), tracking: by('tracking'), elicitor: by('elicitor'), other: by('other'), paid: by('payment') };
+  const s = { acts, tracking: by('tracking'), elicitor: by('elicitor'), other: by('other'), paid: by('payment') };
+  s.clientPayments = acts.filter(a => a.kind === 'income').sort((a, b) => a.date.localeCompare(b.date));
+  s.income = sum(s.clientPayments.filter(isReceived), a => a.amount);
+  s.expected = sum(s.clientPayments.filter(a => !isReceived(a)), a => a.amount);
+  s.billed = p.price != null ? p.price : round2(s.income + s.expected);
+  s.toCollect = round2(s.billed - s.income);
   s.expenses = round2(s.tracking + s.elicitor + s.other);
-  s.profit = round2(s.income - s.expenses);
+  s.profit = round2(s.billed - s.expenses);
   s.mine = s.profit;
   s.people = projectPeople(acts);
   s.unpaid = sum(s.people, x => x.remaining);
   if (p.owner === 'alon') {
     s.mine = round2(s.profit * (p.split ?? 50) / 100);
     s.alonShare = round2(s.profit - s.mine);
-    const myCash = sum(acts.filter(a => a.paidBy === 'me' && MONEY_KINDS.includes(a.kind)), a => a.kind === 'income' ? a.amount : -a.amount);
+    const myCash = sum(acts.filter(a => a.paidBy === 'me' && MONEY_KINDS.includes(a.kind) && isReceived(a)), a => a.kind === 'income' ? a.amount : -a.amount);
     s.balance = round2(s.mine - myCash); // חיובי: אלון חייב לי; שלילי: אני חייב לאלון
   }
   return s;
@@ -415,7 +434,7 @@ function renderProjects(owner) {
     return;
   }
   const alon = owner === 'alon';
-  t.innerHTML = `<tr><th>שם הפרוייקט</th><th>לקוח</th><th>נפתח</th><th>התקבל</th><th>הוצאות</th><th>רווח</th>
+  t.innerHTML = `<tr><th>שם הפרוייקט</th><th>לקוח</th><th>נפתח</th><th>התקבל</th><th>נשאר לגבות</th><th>הוצאות</th><th>רווח</th>
     ${alon ? '<th>החלק שלי</th><th>יתרה מול אלון</th>' : ''}<th>סטטוס</th></tr>` +
     list.map(x => {
       const s = projectStats(x);
@@ -424,6 +443,7 @@ function renderProjects(owner) {
         <td>${esc(x.client)}</td>
         <td>${fmtDate(x.startDate)}</td>
         <td class="num income">${money(s.income)}</td>
+        <td class="num ${s.toCollect > 0 ? 'expense' : 'muted'}">${s.toCollect ? money(s.toCollect) : '–'}</td>
         <td class="num expense">${money(s.expenses)}</td>
         <td class="num ${signClass(s.profit)}"><b>${money(s.profit)}</b></td>
         ${alon ? `<td class="num income">${money(s.mine)}</td>
@@ -435,6 +455,7 @@ function renderProjects(owner) {
 
 // ---------- דף פרוייקט ----------
 function activityDetail(a) {
+  if (a.kind === 'income') return [!isReceived(a) && '<span class="expense">צפוי – עוד לא התקבל</span>', a.note && esc(a.note)].filter(Boolean).join('<br>');
   if (a.kind === 'payment') return `ל${esc(a.payee)} (${ROLE[a.payeeRole] || ''})` + (a.note ? '<br>' + esc(a.note) : '');
   const people = (a.people || []).map(x => {
     const parts = [x.hours != null && `${x.hours} שעות`, x.km != null && `${x.km} ק"מ`].filter(Boolean).join(', ');
@@ -465,7 +486,9 @@ function renderProjectDetail(p, el) {
       ${Object.entries(KINDS).map(([k, l]) => `<button class="btn primary" onclick="openActivity('${p.id}','${k}')">+ ${l}</button>`).join('')}
     </div>
     <div class="stats">
+      ${p.price != null ? stat('המחיר שסוכם', money(p.price)) : ''}
       ${stat('התקבל מהלקוח', money(s.income), 'income')}
+      ${stat('נשאר לגבות', money(s.toCollect), s.toCollect > 0 ? 'expense' : '')}
       ${stat('עוקבים', money(s.tracking), 'expense')}
       ${stat('מדובבים', money(s.elicitor), 'expense')}
       ${stat('הוצאות אחרות', money(s.other), 'expense')}
@@ -475,6 +498,24 @@ function renderProjectDetail(p, el) {
         + stat('יתרה מול אלון', balanceText(s.balance), balanceClass(s.balance)) : ''}
     </div>
     ${alon ? `<label class="settle"><input type="checkbox" ${p.settled ? 'checked' : ''} onchange="setSettled('${p.id}', this.checked)"> התחשבנו – היתרה מול אלון שולמה</label>` : ''}
+    <div class="card">
+      <div class="toolbar"><h2 style="font-size:17px">תשלומים מהלקוח</h2>
+        <button class="link" onclick="openActivity('${p.id}','income')">+ תשלום מהלקוח</button></div>
+      ${s.clientPayments.length ? `<div class="table-wrap"><table>
+        <tr><th>תאריך</th><th>סכום</th><th>סטטוס</th>${alon ? '<th>מי קיבל</th>' : ''}<th>הערה</th><th></th></tr>
+        ${s.clientPayments.map(a => `<tr>
+          <td>${fmtDate(a.date)}</td>
+          <td class="num ${isReceived(a) ? 'income' : ''}"><b>${money(a.amount)}</b></td>
+          <td>${isReceived(a) ? '<span class="income">התקבל</span>' : `<span class="expense">צפוי</span> <button class="link" onclick="setReceived('${a.id}', true)">סמן שהתקבל</button>`}</td>
+          ${alon ? `<td>${a.paidBy === 'me' ? 'אני' : 'אלון'}</td>` : ''}
+          <td class="wrap">${esc(a.note)}</td>
+          <td><button class="link" onclick="openActivity('${p.id}','income','${a.id}')">עריכה</button></td>
+        </tr>`).join('')}
+      </table></div>` : '<p class="muted" style="margin:0">עדיין אין תשלומים מהלקוח. אפשר לרשום תשלום אחד או לפרוס לכמה תשלומים.</p>'}
+      <p style="margin:10px 0 0;font-weight:600">התקבל <span class="income">${money(s.income)}</span>
+        ${p.price != null ? `מתוך ${money(p.price)}` : s.expected ? `· צפוי עוד ${money(s.expected)}` : ''}
+        ${s.toCollect > 0 ? ` · נשאר לגבות <span class="expense">${money(s.toCollect)}</span>` : ''}</p>
+    </div>
     ${s.people.length ? `<div class="card">
       <h3 style="margin-top:0">תשלומים לעוקבים ולמדובבים</h3>
       <div class="table-wrap"><table>
@@ -505,6 +546,7 @@ function renderProjectDetail(p, el) {
 }
 
 function setSettled(id, settled) { col('projects').doc(id).update({ settled }).catch(fail); }
+function setReceived(id, received) { col('activities').doc(id).update({ received }).catch(fail); }
 function delProject(id) {
   const p = db.projects.find(x => x.id === id);
   const acts = db.activities.filter(a => a.projectId === id);
@@ -525,6 +567,7 @@ function openProjectForm(owner, id) {
   const p = db.projects.find(x => x.id === id) || {}, e = projForm.elements;
   e.name.value = p.name || '';
   e.client.value = p.client || '';
+  e.price.value = p.price ?? '';
   e.startDate.value = p.startDate || today();
   e.status.value = p.status || 'open';
   e.split.value = p.split ?? 50;
@@ -543,7 +586,7 @@ projForm.onsubmit = function (ev) {
     return;
   }
   const id = editingProject || uid();
-  const data = { owner: projOwner, name, client: e.client.value.trim(), startDate: e.startDate.value, status: e.status.value, notes: e.notes.value.trim() };
+  const data = { owner: projOwner, name, client: e.client.value.trim(), price: optNum(e.price), startDate: e.startDate.value, status: e.status.value, notes: e.notes.value.trim() };
   if (projOwner === 'alon') data.split = num(e.split);
   col('projects').doc(id).set(data, { merge: true }).catch(fail);
   showProject(projOwner, id);
@@ -567,6 +610,9 @@ function openActivity(projectId, kind, id, payee) {
   e.amount.value = a.people?.length ? '' : (a.amount ?? '');
   e.note.value = a.note || '';
   e.paidBy.value = a.paidBy || 'alon';
+  e.received.value = isReceived(a) ? 'yes' : 'no';
+  e.installments.value = 1;
+  e.interval.value = 'month';
   document.getElementById('actTitle').textContent = (id ? 'עריכת פעילות – ' : '') + p.name;
   actForm.querySelectorAll('input[name=kind]').forEach(r => r.checked = r.value === (a.kind || kind));
   setKind(a.kind || kind, a.people);
@@ -607,6 +653,7 @@ function setKind(kind, people) {
       opts.map(o => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('');
     payee.value = actCtx.payee;
   }
+  updateInstallments();
   peopleRows.innerHTML = '';
   if (hasPeople) {
     (people?.length ? people : kind === 'elicitor' ? [{}, {}] : [{}]).forEach(addPerson); // בדרך כלל 2 מדובבים במשמרת
@@ -615,6 +662,41 @@ function setKind(kind, people) {
   }
   updatePeopleTotal();
 }
+// ---------- תשלומים מהלקוח בפריסה ----------
+// תאריך התשלום ה-i (0 = התשלום הראשון) לפי המרווח שנבחר
+function addPeriod(date, i, every) {
+  const d = new Date(date + 'T00:00:00');
+  if (every === 'month') {
+    const day = d.getDate();
+    d.setDate(1); d.setMonth(d.getMonth() + i);
+    d.setDate(Math.min(day, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate())); // 31 בחודש קצר → סוף החודש
+  } else d.setDate(d.getDate() + i * (every === 'week' ? 7 : 14));
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+// מחלק את הסכום הכולל לתשלומים; עיגול האגורות נכנס לתשלום האחרון
+function splitInstallments() {
+  const e = actForm.elements, n = Math.max(1, Math.round(num(e.installments)) || 1), total = round2(num(e.amount));
+  const part = Math.floor(total / n * 100) / 100;
+  return Array.from({ length: n }, (_, i) => ({
+    date: addPeriod(e.date.value || today(), i, e.interval.value),
+    amount: i === n - 1 ? round2(total - part * (n - 1)) : part
+  }));
+}
+function updateInstallments() {
+  const e = actForm.elements, income = actDlg.dataset.kind === 'income';
+  const n = Math.round(num(e.installments)) || 1, many = income && !actCtx.id && n > 1;
+  document.getElementById('installField').hidden = !income || !!actCtx.id; // פריסה רק בתשלום חדש
+  document.getElementById('intervalField').hidden = !many;
+  document.getElementById('receivedField').hidden = !income || many;
+  if (income) document.getElementById('amountLabel').textContent = many ? 'הסכום הכולל (₪) *' : 'סכום (₪) *';
+  document.getElementById('installPreview').innerHTML = many && e.amount.value
+    ? splitInstallments().map((x, i) => `תשלום ${i + 1}: ${fmtDate(x.date)} – ${money(x.amount)}`).join('<br>') +
+      '<br>תשלום שתאריכו עבר יסומן "התקבל", והשאר "צפוי".'
+    : '';
+}
+['installments', 'amount', 'date'].forEach(n => actForm.elements[n].addEventListener('input', updateInstallments));
+actForm.elements.interval.onchange = updateInstallments;
+
 const personWord = () => actDlg.dataset.kind === 'elicitor' ? 'מדובב' : 'עוקב';
 
 function addPerson(x = {}) {
@@ -700,6 +782,18 @@ actForm.onsubmit = function (ev) {
     const [role, ...rest] = e.payee.value.split('|');
     Object.assign(data, { payeeRole: role, payee: rest.join('|') });
   }
+  if (kind === 'income') {
+    const parts = actCtx.id ? [] : splitInstallments();
+    if (parts.length > 1) {
+      // פריסה: מסמך נפרד לכל תשלום, עם התאריך שלו
+      commitOps(parts.map((x, i) => b => b.set(col('activities').doc(uid() + i), {
+        ...data, date: x.date, amount: x.amount, received: x.date <= today(),
+        note: [data.note, `תשלום ${i + 1} מתוך ${parts.length}`].filter(Boolean).join(' – ')
+      }))).catch(fail);
+      return;
+    }
+    data.received = e.received.value === 'yes';
+  }
   col('activities').doc(actCtx.id || uid()).set(data).catch(fail);
 };
 
@@ -713,8 +807,8 @@ function renderDash() {
 
   // הכנסות והוצאות: פעילויות בפרוייקטים שלי + כללי, לפי תאריך הפעילות
   const owner = id => db.projects.find(p => p.id === id)?.owner;
-  // תשלום לעובד לא נספר – ההוצאה כבר נרשמה במשמרת / במדובבים
-  const flows = db.activities.filter(a => owner(a.projectId) === 'mine' && a.kind !== 'payment').map(a => ({ date: a.date, in: a.kind === 'income', amount: a.amount }))
+  // תשלום לעובד לא נספר – ההוצאה כבר נרשמה במשמרת / במדובבים; תשלום צפוי מהלקוח נספר רק כשהתקבל
+  const flows = db.activities.filter(a => owner(a.projectId) === 'mine' && a.kind !== 'payment' && isReceived(a)).map(a => ({ date: a.date, in: a.kind === 'income', amount: a.amount }))
     .concat(db.transactions.map(t => ({ date: t.date, in: t.type === 'income', amount: t.amount })))
     .filter(f => f.date.startsWith(cur));
   const inc = sum(flows.filter(f => f.in), f => f.amount), exp = sum(flows.filter(f => !f.in), f => f.amount);
