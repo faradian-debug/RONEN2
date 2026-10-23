@@ -202,7 +202,9 @@
       <label><input type="radio" name="kind" value="tracking" required><span>משמרת מעקב</span></label>
       <label><input type="radio" name="kind" value="elicitor" required><span>מדובבים</span></label>
       <label><input type="radio" name="kind" value="other" required><span>הוצאה אחרת</span></label>
+      <label><input type="radio" name="kind" value="payment" required><span>תשלום לעוקב / מדובב</span></label>
     </div>
+    <div class="field" id="payeeField"><label>למי *</label><select name="payee"></select></div>
     <div class="two">
       <div class="field"><label>תאריך *</label><input name="date" type="date" required></div>
       <div class="field" id="paidByField"><label id="paidByLabel"></label>
@@ -248,7 +250,10 @@
 const MONTHS = ['ינו', 'פבר', 'מרץ', 'אפר', 'מאי', 'יוני', 'יולי', 'אוג', 'ספט', 'אוק', 'נוב', 'דצמ'];
 const COLLECTIONS = ['customers', 'transactions', 'projects', 'activities'];
 const OWNERS = { mine: 'הפרוייקטים שלי', alon: 'פרוייקטים עם אלון קציר' };
-const KINDS = { income: 'תקבול מהלקוח', tracking: 'משמרת מעקב', elicitor: 'מדובבים', other: 'הוצאה אחרת' };
+// משמרת מעקב / מדובבים = מה שמגיע לעובד (נכנס לרווח). תשלום = כסף שהועבר לו בפועל (לא נכנס לרווח, רק מקטין את היתרה שלו)
+const KINDS = { income: 'תקבול מהלקוח', tracking: 'משמרת מעקב', elicitor: 'מדובבים', other: 'הוצאה אחרת', payment: 'תשלום לעוקב / מדובב' };
+const ROLE = { tracking: 'עוקב', elicitor: 'מדובב' };
+const MONEY_KINDS = ['income', 'other', 'payment']; // פעילויות שבהן כסף עובר בפועל
 const DEFAULT_TRACKER = { tHour: 130, tKm: 3.5 };
 
 // ---------- Firebase ----------
@@ -319,21 +324,37 @@ function goTab(tab) {
 
 // ---------- חישובי פרוייקט ----------
 // פרוייקט עם אלון: הרווח (תקבולים פחות הוצאות) מתחלק לפי split (ברירת מחדל 50%).
-// לכל פעילות נרשם אצל מי הכסף (paidBy); היתרה = החלק שלי פחות מה שכבר אצלי.
+// בתקבולים ובתשלומים נרשם אצל מי הכסף (paidBy); היתרה = החלק שלי פחות מה שכבר אצלי.
 function projectStats(p) {
   const acts = db.activities.filter(a => a.projectId === p.id);
   const by = k => sum(acts.filter(a => a.kind === k), a => a.amount);
-  const s = { acts, income: by('income'), tracking: by('tracking'), elicitor: by('elicitor'), other: by('other') };
+  const s = { acts, income: by('income'), tracking: by('tracking'), elicitor: by('elicitor'), other: by('other'), paid: by('payment') };
   s.expenses = round2(s.tracking + s.elicitor + s.other);
   s.profit = round2(s.income - s.expenses);
   s.mine = s.profit;
+  s.people = projectPeople(acts);
+  s.unpaid = sum(s.people, x => x.remaining);
   if (p.owner === 'alon') {
     s.mine = round2(s.profit * (p.split ?? 50) / 100);
     s.alonShare = round2(s.profit - s.mine);
-    const myCash = sum(acts.filter(a => a.paidBy === 'me'), a => a.kind === 'income' ? a.amount : -a.amount);
+    const myCash = sum(acts.filter(a => a.paidBy === 'me' && MONEY_KINDS.includes(a.kind)), a => a.kind === 'income' ? a.amount : -a.amount);
     s.balance = round2(s.mine - myCash); // חיובי: אלון חייב לי; שלילי: אני חייב לאלון
   }
   return s;
+}
+// לכל עוקב / מדובב בפרוייקט: כמה מגיע לו, כמה שולם וכמה נשאר
+function projectPeople(acts) {
+  const map = new Map();
+  const get = (role, name) => {
+    const k = role + '|' + name;
+    if (!map.has(k)) map.set(k, { name, role, owed: 0, paid: 0 });
+    return map.get(k);
+  };
+  acts.filter(a => ROLE[a.kind]).forEach(a => (a.people || []).forEach(x => get(a.kind, x.name).owed += x.cost));
+  acts.filter(a => a.kind === 'payment').forEach(a => get(a.payeeRole, a.payee).paid += a.amount);
+  return [...map.values()]
+    .map(o => ({ ...o, owed: round2(o.owed), paid: round2(o.paid), remaining: round2(o.owed - o.paid) }))
+    .sort((a, b) => a.role.localeCompare(b.role) || a.name.localeCompare(b.name, 'he'));
 }
 const balanceText = b => b > 0 ? `אלון חייב לי ${money(b)}` : b < 0 ? `אני חייב לאלון ${money(-b)}` : 'אין יתרה';
 const balanceClass = b => b > 0 ? 'income' : b < 0 ? 'expense' : '';
@@ -351,7 +372,7 @@ function buildProjectSection(owner) {
         <button class="btn primary" onclick="openProjectForm('${owner}')">+ פרוייקט חדש</button>
       </div>
       ${owner === 'alon' ? `
-      <p class="muted" style="margin-top:0">בסוף כל פרוייקט מתחלקים ברווח אחרי הוצאות. בכל פעילות מסמנים אצל מי הכסף – אצלי או אצל אלון.</p>
+      <p class="muted" style="margin-top:0">בסוף כל פרוייקט מתחלקים ברווח אחרי הוצאות. בכל תקבול ותשלום מסמנים אצל מי הכסף – אצלי או אצל אלון.</p>
       <div class="stats">
         <div class="card stat"><div class="label">החלק שלי – כל הפרוייקטים</div><div class="value income aMine"></div></div>
         <div class="card stat"><div class="label">יתרה מול אלון (פרוייקטים שלא התחשבנו)</div><div class="value aBalance" style="font-size:18px"></div></div>
@@ -414,6 +435,7 @@ function renderProjects(owner) {
 
 // ---------- דף פרוייקט ----------
 function activityDetail(a) {
+  if (a.kind === 'payment') return `ל${esc(a.payee)} (${ROLE[a.payeeRole] || ''})` + (a.note ? '<br>' + esc(a.note) : '');
   const people = (a.people || []).map(x => {
     const parts = [x.hours != null && `${x.hours} שעות`, x.km != null && `${x.km} ק"מ`].filter(Boolean).join(', ');
     return `${esc(x.name)}${parts ? ` (${parts})` : ''} – ${money(x.cost)}`;
@@ -421,6 +443,7 @@ function activityDetail(a) {
   return people.concat(a.note ? [esc(a.note)] : []).join('<br>');
 }
 
+const kindClass = k => k === 'income' ? 'income' : k === 'payment' ? '' : 'expense';
 function renderProjectDetail(p, el) {
   const s = projectStats(p), alon = p.owner === 'alon';
   const acts = [...s.acts].sort((a, b) => b.date.localeCompare(a.date));
@@ -447,22 +470,38 @@ function renderProjectDetail(p, el) {
       ${stat('מדובבים', money(s.elicitor), 'expense')}
       ${stat('הוצאות אחרות', money(s.other), 'expense')}
       ${stat('רווח' + (alon ? ' משותף' : ''), money(s.profit), signClass(s.profit))}
+      ${stat('נשאר לשלם לעוקבים ומדובבים', money(s.unpaid), s.unpaid > 0 ? 'expense' : '')}
       ${alon ? stat(`החלק שלי (${p.split ?? 50}%)`, money(s.mine), signClass(s.mine)) + stat('החלק של אלון', money(s.alonShare))
         + stat('יתרה מול אלון', balanceText(s.balance), balanceClass(s.balance)) : ''}
     </div>
     ${alon ? `<label class="settle"><input type="checkbox" ${p.settled ? 'checked' : ''} onchange="setSettled('${p.id}', this.checked)"> התחשבנו – היתרה מול אלון שולמה</label>` : ''}
-    <div class="card"><div class="table-wrap"><table>${acts.length
+    ${s.people.length ? `<div class="card">
+      <h3 style="margin-top:0">תשלומים לעוקבים ולמדובבים</h3>
+      <div class="table-wrap"><table>
+        <tr><th>שם</th><th>תפקיד</th><th>מגיע לו</th><th>שולם</th><th>נשאר לשלם</th><th></th></tr>
+        ${s.people.map((x, i) => `<tr>
+          <td><b>${esc(x.name)}</b></td>
+          <td>${ROLE[x.role]}</td>
+          <td class="num">${money(x.owed)}</td>
+          <td class="num">${money(x.paid)}</td>
+          <td class="num ${x.remaining > 0 ? 'expense' : x.remaining < 0 ? 'income' : 'muted'}"><b>${x.remaining ? money(x.remaining) : 'שולם הכל'}</b></td>
+          <td><button class="link" onclick="openPayment('${p.id}', ${i})">+ תשלום</button></td>
+        </tr>`).join('')}
+      </table></div></div>` : ''}
+    <div class="card"><h3 style="margin-top:0">כל הפעילות</h3><div class="table-wrap"><table>${acts.length
       ? `<tr><th>תאריך</th><th>פעילות</th><th>פירוט</th><th>סכום</th>${alon ? '<th>אצל מי</th>' : ''}<th></th></tr>` + acts.map(a => `<tr>
           <td>${fmtDate(a.date)}</td>
-          <td class="${a.kind === 'income' ? 'income' : 'expense'}">${KINDS[a.kind]}</td>
+          <td class="${kindClass(a.kind)}">${a.kind === 'payment' ? 'תשלום' : KINDS[a.kind]}</td>
           <td class="wrap">${activityDetail(a)}</td>
-          <td class="num ${a.kind === 'income' ? 'income' : 'expense'}">${money(a.amount)}</td>
-          ${alon ? `<td>${a.kind === 'income' ? 'קיבל' : 'שילם'}: ${a.paidBy === 'me' ? 'אני' : 'אלון'}</td>` : ''}
+          <td class="num ${kindClass(a.kind)}">${money(a.amount)}</td>
+          ${alon ? `<td>${MONEY_KINDS.includes(a.kind) ? `${a.kind === 'income' ? 'קיבל' : 'שילם'}: ${a.paidBy === 'me' ? 'אני' : 'אלון'}` : '<span class="muted">–</span>'}</td>` : ''}
           <td><button class="link" onclick="openActivity('${p.id}','${a.kind}','${a.id}')">עריכה</button>
               <button class="link danger" onclick="delActivity('${a.id}')">מחיקה</button></td>
         </tr>`).join('')
       : '<tr><td class="empty">עדיין אין פעילות בפרוייקט. הוסיפו תקבול מהלקוח, משמרת מעקב, מדובבים או הוצאה אחרת.</td></tr>'}
-    </table></div></div>`;
+    </table></div>
+    <p class="hint" style="margin-top:8px">משמרת מעקב ומדובבים רושמים כמה מגיע לעובד. את הכסף שהועבר לו בפועל רושמים כ"תשלום" – אפשר בכמה חלקים ובתאריכים שונים.</p>
+    </div>`;
 }
 
 function setSettled(id, settled) { col('projects').doc(id).update({ settled }).catch(fail); }
@@ -520,19 +559,31 @@ function trackerRates(name) {
     .flatMap(a => a.people || []).find(x => x.name === name);
 }
 
-function openActivity(projectId, kind, id) {
+// payee: "role|name" – תשלום חדש לעובד מסוים (מכפתור "+ תשלום" בטבלת התשלומים)
+function openActivity(projectId, kind, id, payee) {
   const p = db.projects.find(x => x.id === projectId), a = db.activities.find(x => x.id === id) || {}, e = actForm.elements;
-  actCtx = { projectId, id: id || null, owner: p.owner };
+  actCtx = { projectId, id: id || null, owner: p.owner, payee: a.payee ? a.payeeRole + '|' + a.payee : payee || '' };
   e.date.value = a.date || today();
   e.amount.value = a.people?.length ? '' : (a.amount ?? '');
   e.note.value = a.note || '';
   e.paidBy.value = a.paidBy || 'alon';
-  document.getElementById('paidByField').hidden = p.owner !== 'alon';
   document.getElementById('actTitle').textContent = (id ? 'עריכת פעילות – ' : '') + p.name;
   actForm.querySelectorAll('input[name=kind]').forEach(r => r.checked = r.value === (a.kind || kind));
   setKind(a.kind || kind, a.people);
+  if (!id && payee) fillRemaining();
   actDlg.showModal();
 }
+function openPayment(projectId, i) {
+  const x = projectStats(db.projects.find(p => p.id === projectId)).people[i];
+  openActivity(projectId, 'payment', null, x.role + '|' + x.name);
+}
+// בבחירת עובד – הסכום מתמלא ביתרה שנשארה לו
+function fillRemaining() {
+  const e = actForm.elements, [role, ...rest] = e.payee.value.split('|'), name = rest.join('|');
+  const x = projectStats(db.projects.find(p => p.id === actCtx.projectId)).people.find(o => o.role === role && o.name === name);
+  if (x && x.remaining > 0) e.amount.value = x.remaining;
+}
+actForm.elements.payee.onchange = () => { if (!actCtx.id) fillRemaining(); };
 actForm.querySelectorAll('input[name=kind]').forEach(r => r.onchange = () => setKind(r.value));
 
 function setKind(kind, people) {
@@ -541,8 +592,21 @@ function setKind(kind, people) {
   document.getElementById('peopleBlock').hidden = !hasPeople;
   document.getElementById('amountField').hidden = hasPeople;
   actForm.elements.amount.required = !hasPeople;
-  document.getElementById('amountLabel').textContent = kind === 'income' ? 'סכום שהתקבל מהלקוח (₪) *' : 'סכום (₪) *';
+  document.getElementById('amountLabel').textContent = kind === 'income' ? 'סכום שהתקבל מהלקוח (₪) *' : kind === 'payment' ? 'סכום ששולם (₪) *' : 'סכום (₪) *';
   document.getElementById('paidByLabel').textContent = kind === 'income' ? 'מי קיבל את הכסף' : 'מי שילם';
+  // אצל מי הכסף – רק בפרוייקט עם אלון, ורק כשכסף עובר בפועל
+  document.getElementById('paidByField').hidden = actCtx.owner !== 'alon' || !MONEY_KINDS.includes(kind);
+  const payment = kind === 'payment', payee = actForm.elements.payee;
+  document.getElementById('payeeField').hidden = !payment;
+  payee.required = payment;
+  if (payment) {
+    const people = projectStats(db.projects.find(p => p.id === actCtx.projectId)).people;
+    const opts = people.map(x => ({ value: x.role + '|' + x.name, label: `${x.name} (${ROLE[x.role]}) – נשאר ${money(x.remaining)}` }));
+    if (actCtx.payee && !opts.some(o => o.value === actCtx.payee)) opts.push({ value: actCtx.payee, label: actCtx.payee.split('|').slice(1).join('|') });
+    payee.innerHTML = `<option value="">${opts.length ? '— בחרו עוקב או מדובב —' : 'קודם רושמים משמרת מעקב או מדובבים'}</option>` +
+      opts.map(o => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('');
+    payee.value = actCtx.payee;
+  }
   peopleRows.innerHTML = '';
   if (hasPeople) {
     (people?.length ? people : kind === 'elicitor' ? [{}, {}] : [{}]).forEach(addPerson); // בדרך כלל 2 מדובבים במשמרת
@@ -630,8 +694,12 @@ actForm.onsubmit = function (ev) {
   const data = {
     projectId: actCtx.projectId, kind, date: e.date.value, note: e.note.value.trim(), people,
     amount: people.length ? sum(people, x => x.cost) : round2(num(e.amount)),
-    paidBy: actCtx.owner === 'alon' ? e.paidBy.value : 'me'
+    paidBy: actCtx.owner === 'alon' && MONEY_KINDS.includes(kind) ? e.paidBy.value : 'me'
   };
+  if (kind === 'payment') {
+    const [role, ...rest] = e.payee.value.split('|');
+    Object.assign(data, { payeeRole: role, payee: rest.join('|') });
+  }
   col('activities').doc(actCtx.id || uid()).set(data).catch(fail);
 };
 
@@ -645,7 +713,8 @@ function renderDash() {
 
   // הכנסות והוצאות: פעילויות בפרוייקטים שלי + כללי, לפי תאריך הפעילות
   const owner = id => db.projects.find(p => p.id === id)?.owner;
-  const flows = db.activities.filter(a => owner(a.projectId) === 'mine').map(a => ({ date: a.date, in: a.kind === 'income', amount: a.amount }))
+  // תשלום לעובד לא נספר – ההוצאה כבר נרשמה במשמרת / במדובבים
+  const flows = db.activities.filter(a => owner(a.projectId) === 'mine' && a.kind !== 'payment').map(a => ({ date: a.date, in: a.kind === 'income', amount: a.amount }))
     .concat(db.transactions.map(t => ({ date: t.date, in: t.type === 'income', amount: t.amount })))
     .filter(f => f.date.startsWith(cur));
   const inc = sum(flows.filter(f => f.in), f => f.amount), exp = sum(flows.filter(f => !f.in), f => f.amount);
