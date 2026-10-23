@@ -119,6 +119,28 @@
       <h3 style="margin-top:0">הכנסות והוצאות לפי לקוח</h3>
       <div class="table-wrap"><table id="topCust"></table></div>
     </div>
+
+    <!-- אלון קציר (כל השנים, לא רק השנה שנבחרה) -->
+    <div id="alon" style="margin-top:28px">
+      <div class="toolbar">
+        <h2>עבודות עם אלון קציר</h2>
+        <button class="btn primary" onclick="openJob(null, true)">+ עבודה עם אלון</button>
+      </div>
+      <p style="color:var(--muted);margin-top:0">אלון מקבל את הכסף מהלקוח ומשלם לעוקבים ולמדובבים. את הרווח מתחלקים חצי-חצי. הסיכום כולל את כל השנים.</p>
+      <div class="stats">
+        <div class="card stat"><div class="label">הכנסות מלקוחות</div><div class="value income" id="aIncome"></div></div>
+        <div class="card stat"><div class="label">תשלום לעוקבים ומדובבים</div><div class="value expense" id="aCost"></div></div>
+        <div class="card stat"><div class="label">רווח משותף</div><div class="value" id="aProfit"></div></div>
+        <div class="card stat"><div class="label">החלק שלי</div><div class="value income" id="aMine"></div></div>
+        <div class="card stat"><div class="label">אלון חייב לי</div><div class="value" id="aOwed"></div></div>
+      </div>
+      <div class="card">
+        <div class="toolbar">
+          <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="alonOpen"> רק עבודות שאלון עוד לא העביר את החלק שלי</label>
+        </div>
+        <div class="table-wrap"><table id="alonTable"></table></div>
+      </div>
+    </div>
   </section>
 
   <!-- תנועות -->
@@ -151,28 +173,6 @@
       <button class="btn primary" onclick="openCust()">+ לקוח חדש</button>
     </div>
     <div class="card"><div class="table-wrap"><table id="custTable"></table></div></div>
-  </section>
-
-  <!-- אלון קציר -->
-  <section id="alon">
-    <div class="toolbar">
-      <h2>עבודות עם אלון קציר</h2>
-      <button class="btn primary" onclick="openJob(null, true)">+ עבודה עם אלון</button>
-    </div>
-    <p style="color:var(--muted);margin-top:0">אלון מקבל את הכסף מהלקוח ומשלם לעוקבים ולמדובבים. את הרווח מתחלקים חצי-חצי.</p>
-    <div class="stats">
-      <div class="card stat"><div class="label">הכנסות מלקוחות</div><div class="value income" id="aIncome"></div></div>
-      <div class="card stat"><div class="label">תשלום לעוקבים ומדובבים</div><div class="value expense" id="aCost"></div></div>
-      <div class="card stat"><div class="label">רווח משותף</div><div class="value" id="aProfit"></div></div>
-      <div class="card stat"><div class="label">החלק שלי</div><div class="value income" id="aMine"></div></div>
-      <div class="card stat"><div class="label">אלון חייב לי</div><div class="value" id="aOwed"></div></div>
-    </div>
-    <div class="card">
-      <div class="toolbar">
-        <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="alonOpen"> רק עבודות שאלון עוד לא העביר את החלק שלי</label>
-      </div>
-      <div class="table-wrap"><table id="alonTable"></table></div>
-    </div>
   </section>
 
   <!-- גיבוי -->
