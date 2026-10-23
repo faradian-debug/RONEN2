@@ -268,6 +268,8 @@ const OWNERS = { mine: 'הפרוייקטים שלי', alon: 'פרוייקטים 
 const KINDS = { income: 'תקבול מהלקוח', tracking: 'משמרת מעקב', elicitor: 'מדובבים', other: 'הוצאה אחרת', payment: 'תשלום לעוקב / מדובב' };
 const ROLE = { tracking: 'עוקב', elicitor: 'מדובב' };
 const MONEY_KINDS = ['income', 'other', 'payment']; // פעילויות שבהן כסף עובר בפועל
+const VAT = 0.18; // מע"מ
+const withVat = n => round2(n * (1 + VAT));
 const DEFAULT_TRACKER = { tHour: 130, tKm: 3.5 };
 
 // ---------- Firebase ----------
@@ -536,7 +538,7 @@ function renderProjectDetail(p, el) {
     ${s.people.length ? `<div class="card">
       <h3 style="margin-top:0">תשלומים לעוקבים ולמדובבים</h3>
       <div class="table-wrap"><table>
-        <tr><th>שם</th><th>תפקיד</th><th>מגיע לו</th><th>שולם</th><th>מתי שולם</th><th>נשאר לשלם</th><th></th></tr>
+        <tr><th>שם</th><th>תפקיד</th><th>מגיע לו</th><th>שולם</th><th>מתי שולם</th><th>נשאר לשלם</th><th>נשאר לשלם כולל מע"מ ${VAT * 100}%</th><th></th></tr>
         ${s.people.map((x, i) => `<tr>
           <td><b>${esc(x.name)}</b></td>
           <td>${ROLE[x.role]}</td>
@@ -544,6 +546,7 @@ function renderProjectDetail(p, el) {
           <td class="num">${money(x.paid)}</td>
           <td class="wrap" style="font-size:13px">${paymentsTo(s.acts, x.role, x.name).map(a => paymentsText([a], alon)).join('<br>') || '<span class="muted">–</span>'}</td>
           <td class="num ${x.remaining > 0 ? 'expense' : x.remaining < 0 ? 'income' : 'muted'}"><b>${x.remaining ? money(x.remaining) : 'שולם הכל'}</b></td>
+          <td class="num ${x.remaining > 0 ? 'expense' : 'muted'}">${x.remaining > 0 ? `<b>${money(withVat(x.remaining))}</b>` : '–'}</td>
           <td><button class="link" onclick="openPayment('${p.id}', ${i})">+ תשלום</button></td>
         </tr>`).join('')}
       </table></div></div>` : ''}
