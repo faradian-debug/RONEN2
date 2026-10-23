@@ -377,6 +377,7 @@ function projectStats(p) {
     // פרוייקט שסומן "התחשבנו" בגרסה הקודמת (לפני שהיו העברות) נחשב מאוזן
     s.legacySettled = !!p.settled && !s.transfers.length;
     if (s.legacySettled) s.balance = 0;
+    s.paidOff = s.balance === 0 && (s.transfers.length > 0 || s.legacySettled); // אלון שילם לי הכל
   }
   return s;
 }
@@ -466,7 +467,7 @@ function renderProjects(owner) {
         <td class="num expense">${money(s.expenses)}</td>
         <td class="num ${signClass(s.profit)}"><b>${money(s.profit)}</b></td>
         ${alon ? `<td class="num income">${money(s.mine)}</td>
-          <td class="${balanceClass(s.balance) || 'muted'}">${s.balance || !s.transfers.length && !s.legacySettled ? balanceText(s.balance) : 'שולם הכל'}</td>` : ''}
+          <td class="${balanceClass(s.balance) || 'muted'}">${s.paidOff ? 'שולם הכל' : balanceText(s.balance)}</td>` : ''}
         <td><span class="badge ${x.status === 'closed' ? '' : 'open'}">${x.status === 'closed' ? 'סגור' : 'פתוח'}</span></td>
       </tr>`;
     }).join('');
@@ -852,7 +853,11 @@ actForm.onsubmit = function (ev) {
     const [role, ...rest] = e.payee.value.split('|');
     Object.assign(data, { payeeRole: role, payee: rest.join('|') });
   }
-  if (kind === 'settlement') data.direction = e.direction.value;
+  if (kind === 'settlement') {
+    data.direction = e.direction.value;
+    // תשלום חדש מאלון – הפרוייקט ייסגר שוב אוטומטית כשהיתרה מתאפסת (גם אם נפתח ידנית קודם)
+    col('projects').doc(actCtx.projectId).set({ autoClosed: false }, { merge: true }).catch(fail);
+  }
   if (kind === 'income') {
     // סך העסקה נשמר בפרוייקט (אותו שדה כמו "המחיר שסוכם עם הלקוח")
     const p = db.projects.find(x => x.id === actCtx.projectId), deal = optNum(e.deal);
@@ -1045,7 +1050,14 @@ document.getElementById('importFile').onchange = async e => {
   e.target.value = '';
 };
 
-function renderAll() { renderDash(); renderProjects('mine'); renderProjects('alon'); renderTx(); }
+// פרוייקט עם אלון שאלון שילם בו הכל עובר ל"סגור" – פעם אחת (autoClosed), כך שפתיחה ידנית נשארת
+function autoCloseAlonProjects() {
+  db.projects.filter(p => p.owner === 'alon' && p.status !== 'closed' && !p.autoClosed && projectStats(p).paidOff)
+    .forEach(p => col('projects').doc(p.id).set({ status: 'closed', autoClosed: true }, { merge: true }).catch(fail));
+}
+
+function renderAll() {
+  autoCloseAlonProjects(); renderDash(); renderProjects('mine'); renderProjects('alon'); renderTx(); }
 </script>
 </body>
 </html>
