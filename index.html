@@ -217,6 +217,9 @@
       <button type="button" class="btn" id="addPersonBtn" style="margin-bottom:10px"></button>
       <div id="peopleTotal" style="font-weight:600;margin-bottom:10px"></div>
     </div>
+    <div class="field" id="dealField"><label>סך העסקה שנסגרה עם הלקוח לכל העבודה (₪)</label>
+      <input name="deal" type="number" step="0.01" min="0" placeholder="לא חובה">
+      <p id="dealInfo" class="hint"></p></div>
     <div class="field" id="amountField"><label id="amountLabel"></label><input name="amount" type="number" step="0.01" min="0"></div>
     <div id="installField">
       <div class="two">
@@ -626,6 +629,7 @@ function openActivity(projectId, kind, id, payee) {
   e.note.value = a.note || '';
   e.paidBy.value = a.paidBy || 'alon';
   e.received.value = isReceived(a) ? 'yes' : 'no';
+  e.deal.value = p.price ?? '';
   e.installments.value = 1;
   e.interval.value = 'month';
   document.getElementById('actTitle').textContent = (id ? 'עריכת פעילות – ' : '') + p.name;
@@ -703,13 +707,21 @@ function updateInstallments() {
   document.getElementById('installField').hidden = !income || !!actCtx.id; // פריסה רק בתשלום חדש
   document.getElementById('intervalField').hidden = !many;
   document.getElementById('receivedField').hidden = !income || many;
+  document.getElementById('dealField').hidden = !income;
+  if (income) {
+    // סך העסקה מול מה שכבר התקבל (בלי התשלום שנערך כרגע)
+    const s = projectStats(db.projects.find(p => p.id === actCtx.projectId));
+    const got = round2(s.income - (actCtx.id && isReceived(db.activities.find(a => a.id === actCtx.id)) ? db.activities.find(a => a.id === actCtx.id).amount : 0));
+    const deal = optNum(e.deal);
+    document.getElementById('dealInfo').textContent = `התקבל עד כה ${money(got)}` + (deal != null ? ` · נשאר לגבות ${money(round2(deal - got))} לפני התשלום הזה` : '');
+  }
   if (income) document.getElementById('amountLabel').textContent = many ? 'הסכום הכולל (₪) *' : 'סכום (₪) *';
   document.getElementById('installPreview').innerHTML = many && e.amount.value
     ? splitInstallments().map((x, i) => `תשלום ${i + 1}: ${fmtDate(x.date)} – ${money(x.amount)}`).join('<br>') +
       '<br>תשלום שתאריכו עבר יסומן "התקבל", והשאר "צפוי".'
     : '';
 }
-['installments', 'amount', 'date'].forEach(n => actForm.elements[n].addEventListener('input', updateInstallments));
+['installments', 'amount', 'date', 'deal'].forEach(n => actForm.elements[n].addEventListener('input', updateInstallments));
 actForm.elements.interval.onchange = updateInstallments;
 
 const personWord = () => actDlg.dataset.kind === 'elicitor' ? 'מדובב' : 'עוקב';
@@ -798,6 +810,9 @@ actForm.onsubmit = function (ev) {
     Object.assign(data, { payeeRole: role, payee: rest.join('|') });
   }
   if (kind === 'income') {
+    // סך העסקה נשמר בפרוייקט (אותו שדה כמו "המחיר שסוכם עם הלקוח")
+    const p = db.projects.find(x => x.id === actCtx.projectId), deal = optNum(e.deal);
+    if (deal !== (p.price ?? null)) col('projects').doc(p.id).set({ price: deal }, { merge: true }).catch(fail);
     const parts = actCtx.id ? [] : splitInstallments();
     if (parts.length > 1) {
       // פריסה: מסמך נפרד לכל תשלום, עם התאריך שלו
