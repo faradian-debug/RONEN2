@@ -65,6 +65,13 @@
   .field input, .field select { width: 100%; min-width: 0; }
   .hint { font-size: 12px; color: var(--muted); margin: 0; }
   #jobDlg[data-mode="fixed"] .rate-only { display: none; }
+  .type-pick { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+  .type-pick label { position: relative; cursor: pointer; }
+  .type-pick input { position: absolute; opacity: 0; inset: 0; }
+  .type-pick span { display: block; text-align: center; padding: 9px; border: 1px solid var(--line); border-radius: 8px; font-weight: 600; color: var(--muted); }
+  .type-pick input[value="income"]:checked + span { border-color: var(--income); color: var(--income); background: color-mix(in srgb, var(--income) 12%, transparent); }
+  .type-pick input[value="expense"]:checked + span { border-color: var(--expense); color: var(--expense); background: color-mix(in srgb, var(--expense) 12%, transparent); }
+  .type-pick input:focus-visible + span { outline: 2px solid var(--accent); }
   .dot { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-inline-end: 4px; }
 </style>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
@@ -149,8 +156,7 @@
       <h2>הכנסות והוצאות</h2>
       <button class="btn primary" onclick="openJob(null, true)">+ עבודה עם אלון</button>
       <button class="btn primary" onclick="openJob()">+ עבודה עם עוקב</button>
-      <button class="btn primary" onclick="openTx('income')">+ הכנסה</button>
-      <button class="btn primary" onclick="openTx('expense')">+ הוצאה</button>
+      <button class="btn primary" onclick="openTx()">+ הכנסה / הוצאה</button>
     </div>
     <div class="toolbar">
       <select id="fType"><option value="">הכל</option><option value="income">הכנסות</option><option value="expense">הוצאות</option></select>
@@ -219,6 +225,10 @@
 <dialog id="txDlg">
   <form method="dialog" id="txForm">
     <h3 id="txTitle"></h3>
+    <div class="type-pick">
+      <label><input type="radio" name="txType" value="income" required><span>הכנסה</span></label>
+      <label><input type="radio" name="txType" value="expense" required><span>הוצאה</span></label>
+    </div>
     <div class="two">
       <div class="field"><label>תאריך *</label><input name="date" type="date" required></div>
       <div class="field"><label>סכום (₪) *</label><input name="amount" type="number" step="0.01" min="0" required></div>
@@ -281,7 +291,7 @@ fs.enablePersistence({ synchronizeTabs: true }).catch(() => {}); // עבודה �
 
 let db = { customers: [], transactions: [] };
 let user = null, unsub = [];
-let editingCust = null, editingTx = null, txType = 'income';
+let editingCust = null, editingTx = null;
 
 const col = name => fs.collection('users').doc(user.uid).collection(name);
 const fail = e => alert('שמירה נכשלה: ' + e.message);
@@ -491,9 +501,11 @@ function resolveCustomer(name, ops, extra = {}) {
   return id;
 }
 
+// בתנועה חדשה בוחרים בטופס אם זו הכנסה או הוצאה
 function openTx(type, id) {
-  txType = type; editingTx = id || null;
+  editingTx = id || null;
   const f = document.getElementById('txForm'), x = db.transactions.find(t => t.id === id) || {};
+  f.querySelectorAll('input[name=txType]').forEach(r => r.checked = r.value === type);
   f.elements.date.value = x.date || new Date().toISOString().slice(0, 10);
   f.elements.amount.value = x.amount ?? '';
   // תנועה חדשה בזמן שמסננים לפי לקוח – הלקוח ממולא מראש
@@ -501,14 +513,14 @@ function openTx(type, id) {
   fillCustList();
   f.elements.category.value = x.category || '';
   f.elements.description.value = x.description || '';
-  document.getElementById('txTitle').textContent = (id ? 'עריכת ' : '') + (type === 'income' ? 'הכנסה' : 'הוצאה');
+  document.getElementById('txTitle').textContent = id ? 'עריכת תנועה' : 'הכנסה / הוצאה';
   document.getElementById('txDlg').showModal();
 }
 document.getElementById('txForm').onsubmit = function (e) {
   if (e.submitter?.value !== 'save') return;
   const f = this, ops = [];
   const data = {
-    type: txType, date: f.elements.date.value, amount: Math.round(parseFloat(f.elements.amount.value) * 100) / 100,
+    type: f.elements.txType.value, date: f.elements.date.value, amount: Math.round(parseFloat(f.elements.amount.value) * 100) / 100,
     customerId: resolveCustomer(f.elements.customerName.value, ops), category: f.elements.category.value.trim(), description: f.elements.description.value.trim()
   };
   ops.push(b => b.set(col('transactions').doc(editingTx || uid()), data, { merge: true }));
