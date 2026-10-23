@@ -48,6 +48,7 @@
   td.wrap { white-space: normal; }
   tr.click { cursor: pointer; }
   tr.click:hover td { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+  tr.total td { border-top: 2px solid var(--text); border-bottom: none; background: color-mix(in srgb, var(--accent) 5%, transparent); }
   .empty { color: var(--muted); text-align: center; padding: 24px; }
   .badge { font-size: 12px; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--line); color: var(--muted); }
   .badge.open { color: var(--accent); border-color: var(--accent); }
@@ -454,10 +455,23 @@ function renderProjects(owner) {
     return;
   }
   const alon = owner === 'alon';
-  t.innerHTML = `<tr><th>שם הפרוייקט</th><th>לקוח</th><th>נפתח</th><th>התקבל</th><th>נשאר לגבות</th><th>הוצאות</th><th>רווח</th>
+  const rows = list.map(x => ({ x, s: projectStats(x) }));
+  const tot = k => sum(rows, o => o.s[k]);
+  const totBalance = tot('balance'), totProfit = tot('profit'), totMine = tot('mine');
+  // שורת סיכום של הפרוייקטים שמוצגים (אחרי חיפוש וסינון)
+  const totalRow = `<tr class="total">
+      <td colspan="3"><b>סה"כ (${rows.length} פרוייקטים)</b></td>
+      <td class="num income"><b>${money(tot('income'))}</b></td>
+      <td class="num ${tot('toCollect') > 0 ? 'expense' : 'muted'}"><b>${money(tot('toCollect'))}</b></td>
+      <td class="num expense"><b>${money(tot('expenses'))}</b></td>
+      <td class="num ${signClass(totProfit)}"><b>${money(totProfit)}</b></td>
+      ${alon ? `<td class="num ${signClass(totMine)}" style="font-size:16px"><b>${money(totMine)}</b></td>
+        <td class="${balanceClass(totBalance) || 'muted'}"><b>${balanceText(totBalance)}</b></td>` : ''}
+      <td></td>
+    </tr>`;
+  t.innerHTML = `<tr><th>שם הפרוייקט</th><th>לקוח</th><th>נפתח</th><th>התקבל</th><th>נשאר לגבות</th><th>הוצאות</th><th>${alon ? 'רווח' : 'הרווח שלי'}</th>
     ${alon ? '<th>החלק שלי</th><th>יתרה מול אלון</th>' : ''}<th>סטטוס</th></tr>` +
-    list.map(x => {
-      const s = projectStats(x);
+    rows.map(({ x, s }) => {
       return `<tr class="click" onclick="showProject('${owner}','${x.id}')">
         <td><b>${esc(x.name)}</b></td>
         <td>${esc(x.client)}</td>
@@ -470,7 +484,7 @@ function renderProjects(owner) {
           <td class="${balanceClass(s.balance) || 'muted'}">${s.paidOff ? 'שולם הכל' : balanceText(s.balance)}</td>` : ''}
         <td><span class="badge ${x.status === 'closed' ? '' : 'open'}">${x.status === 'closed' ? 'סגור' : 'פתוח'}</span></td>
       </tr>`;
-    }).join('');
+    }).join('') + totalRow;
 }
 
 // ---------- דף פרוייקט ----------
