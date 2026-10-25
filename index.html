@@ -124,7 +124,7 @@
       <div class="card stat"><div class="label">הוצאות (שלי + כללי)</div><div class="value expense" id="sExpense"></div></div>
       <div class="card stat"><div class="label">החלק שלי מפרוייקטים עם אלון</div><div class="value" id="sAlon"></div></div>
       <div class="card stat"><div class="label">סה"כ רווח שלי</div><div class="value" id="sProfit"></div></div>
-      <div class="card stat"><div class="label">יתרה מול אלון</div><div class="value" id="sBalance" style="font-size:18px"></div></div>
+      <div class="card stat"><div class="label">אלון חייב לי (כולל מע"מ)</div><div class="value" id="sBalance"></div></div>
     </div>
     <div class="card">
       <h3 style="margin-top:0">לפי חודש – הפרוייקטים שלי וכללי</h3>
@@ -401,9 +401,8 @@ function projectPeople(acts) {
     .sort((a, b) => a.role.localeCompare(b.role) || a.name.localeCompare(b.name, 'he'));
 }
 const balanceText = b => b > 0 ? `אלון חייב לי ${money(b)}` : b < 0 ? `אני חייב לאלון ${money(-b)}` : 'אין יתרה';
-// היתרה מול אלון מוצגת כולל מע"מ 18%, ומתחתיה הסכום לפני מע"מ
-const balanceVat = b => b ? `${b > 0 ? 'אלון חייב לי' : 'אני חייב לאלון'} ${money(withVat(Math.abs(b)))}
-  <div class="hint">כולל מע"מ · ${money(Math.abs(b))} לפני מע"מ</div>` : 'אין יתרה';
+// היתרה מול אלון: רק הסכום כולל מע"מ 18% (מינוס = אני חייב לאלון)
+const balanceVat = b => b ? (b < 0 ? '-' : '') + money(withVat(Math.abs(b))) : '–';
 // העברה עם אלון שסומנה "כולל מע"מ" נספרת ביתרה לפני מע"מ
 const netOfVat = a => a.vatIncluded ? round2(a.amount / (1 + VAT)) : a.amount;
 const balanceClass = b => b > 0 ? 'income' : b < 0 ? 'expense' : '';
@@ -424,7 +423,7 @@ function buildProjectSection(owner) {
       <p class="muted" style="margin-top:0">בסוף כל פרוייקט מתחלקים ברווח אחרי הוצאות. בכל תקבול ותשלום מסמנים אצל מי הכסף – אצלי או אצל אלון.</p>
       <div class="stats">
         <div class="card stat"><div class="label">החלק שלי – כל הפרוייקטים</div><div class="value income aMine"></div></div>
-        <div class="card stat"><div class="label">יתרה מול אלון – כל הפרוייקטים</div><div class="value aBalance" style="font-size:18px"></div></div>
+        <div class="card stat"><div class="label">אלון חייב לי – כל הפרוייקטים (כולל מע"מ)</div><div class="value aBalance" style="font-size:18px"></div></div>
       </div>` : ''}
       <div class="card"><div class="table-wrap"><table class="pTable"></table></div></div>
     </div>
@@ -475,11 +474,11 @@ function renderProjects(owner) {
       <td class="num expense"><b>${money(tot('expenses'))}</b></td>
       <td class="num ${signClass(totProfit)}"><b>${money(totProfit)}</b></td>
       ${alon ? `<td class="num ${signClass(totMine)}" style="font-size:16px"><b>${money(totMine)}</b></td>
-        <td class="${balanceClass(totBalance) || 'muted'}"><b>${balanceVat(totBalance)}</b></td>` : ''}
+        <td class="num ${balanceClass(totBalance) || 'muted'}"><b>${balanceVat(totBalance)}</b></td>` : ''}
       <td></td>
     </tr>`;
   t.innerHTML = `<tr><th>שם הפרוייקט</th><th>לקוח</th><th>נפתח</th><th>התקבל</th><th>נשאר לגבות</th><th>הוצאות</th><th>${alon ? 'רווח' : 'הרווח שלי'}</th>
-    ${alon ? '<th>החלק שלי</th><th>יתרה מול אלון</th>' : ''}<th>סטטוס</th></tr>` +
+    ${alon ? '<th>החלק שלי</th><th>אלון חייב לי (כולל מע"מ)</th>' : ''}<th>סטטוס</th></tr>` +
     rows.map(({ x, s }) => {
       return `<tr class="click" onclick="showProject('${owner}','${x.id}')">
         <td><b>${esc(x.name)}</b></td>
@@ -490,7 +489,7 @@ function renderProjects(owner) {
         <td class="num expense">${money(s.expenses)}</td>
         <td class="num ${signClass(s.profit)}"><b>${money(s.profit)}</b></td>
         ${alon ? `<td class="num income">${money(s.mine)}</td>
-          <td class="${balanceClass(s.balance) || 'muted'}">${s.paidOff ? 'שולם הכל' : balanceVat(s.balance)}</td>` : ''}
+          <td class="num ${balanceClass(s.balance) || 'muted'}">${balanceVat(s.balance)}</td>` : ''}
         <td><span class="badge ${x.status === 'closed' ? '' : 'open'}">${x.status === 'closed' ? 'סגור' : 'פתוח'}</span></td>
       </tr>`;
     }).join('') + totalRow;
@@ -552,7 +551,7 @@ function renderProjectDetail(p, el) {
       ${stat('רווח' + (alon ? ' משותף' : ''), money(s.profit), signClass(s.profit))}
       ${stat('נשאר לשלם לעוקבים ומדובבים', money(s.unpaid), s.unpaid > 0 ? 'expense' : '')}
       ${alon ? stat(`החלק שלי (${p.split ?? 50}%)`, money(s.mine), signClass(s.mine)) + stat('החלק של אלון', money(s.alonShare))
-        + stat('יתרה מול אלון (כולל מע"מ)', balanceVat(s.balance), balanceClass(s.balance)) : ''}
+        + stat('אלון חייב לי (כולל מע"מ)', balanceVat(s.balance), balanceClass(s.balance)) : ''}
     </div>
     ${alon ? `<div class="card">
       <div class="toolbar"><h2 style="font-size:17px">תשלומים מאלון אליי</h2>
@@ -568,7 +567,7 @@ function renderProjectDetail(p, el) {
               <button class="link danger" onclick="delActivity('${a.id}')">מחיקה</button></td>
         </tr>`).join('')}
       </table></div>` : '<p class="muted" style="margin:0">אלון עוד לא העביר תשלום בפרוייקט הזה.</p>'}
-      <p style="margin:10px 0 0;font-weight:600">אלון העביר לי עד כה ${money(s.fromAlonGross)} · <span class="${balanceClass(s.balance)}">${s.balance ? balanceVat(s.balance) : 'אין יתרה – שולם הכל'}</span></p>
+      <p style="margin:10px 0 0;font-weight:600">אלון העביר לי עד כה ${money(s.fromAlonGross)} · <span class="${balanceClass(s.balance)}">${s.balance ? 'אלון חייב לי (כולל מע"מ): ' + balanceVat(s.balance) : 'אין יתרה – שולם הכל'}</span></p>
       ${s.legacySettled ? `<p class="hint" style="margin-top:6px">הפרוייקט סומן בעבר "התחשבנו", ולכן היתרה מוצגת כאפס.
         <button class="link" onclick="setSettled('${p.id}', false)">ביטול הסימון</button> – כדי לרשום את התשלומים מאלון בפועל.</p>` : ''}
     </div>` : ''}
