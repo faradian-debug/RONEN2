@@ -211,6 +211,8 @@
       <label><input type="radio" name="kind" value="payment" required><span>תשלום לעוקב / מדובב</span></label>
       <label id="settleKind"><input type="radio" name="kind" value="settlement" required><span>העברה עם אלון</span></label>
     </div>
+    <div class="field" id="vatField"><label>הסכום כולל מע"מ?</label>
+      <select name="vatIncluded"><option value="yes">כן, כולל מע"מ 18%</option><option value="no">לא, בלי מע"מ</option></select></div>
     <div class="field" id="directionField"><label>כיוון ההעברה</label>
       <select name="direction"><option value="fromAlon">אלון העביר לי</option><option value="toAlon">אני העברתי לאלון</option></select></div>
     <div class="field" id="payeeField"><label>למי *</label><select name="payee"></select></div>
@@ -372,7 +374,9 @@ function projectStats(p) {
     s.mine = round2(s.profit * (p.split ?? 50) / 100);
     s.alonShare = round2(s.profit - s.mine);
     s.transfers = acts.filter(a => a.kind === 'settlement').sort((a, b) => a.date.localeCompare(b.date));
-    s.fromAlon = sum(s.transfers, a => a.direction === 'toAlon' ? -a.amount : a.amount); // נטו שאלון העביר לי
+    const dir = a => a.direction === 'toAlon' ? -1 : 1;
+    s.fromAlon = sum(s.transfers, a => dir(a) * netOfVat(a)); // מה שאלון העביר לי, לפני מע"מ – לחישוב היתרה
+    s.fromAlonGross = sum(s.transfers, a => dir(a) * a.amount); // כפי שהועבר בפועל
     const myCash = round2(sum(acts.filter(a => a.paidBy === 'me' && MONEY_KINDS.includes(a.kind) && isReceived(a)), a => a.kind === 'income' ? a.amount : -a.amount) + s.fromAlon);
     s.balance = round2(s.mine - myCash); // חיובי: אלון חייב לי; שלילי: אני חייב לאלון
     // פרוייקט שסומן "התחשבנו" בגרסה הקודמת (לפני שהיו העברות) נחשב מאוזן
@@ -397,6 +401,11 @@ function projectPeople(acts) {
     .sort((a, b) => a.role.localeCompare(b.role) || a.name.localeCompare(b.name, 'he'));
 }
 const balanceText = b => b > 0 ? `אלון חייב לי ${money(b)}` : b < 0 ? `אני חייב לאלון ${money(-b)}` : 'אין יתרה';
+// היתרה מול אלון מוצגת כולל מע"מ 18%, ומתחתיה הסכום לפני מע"מ
+const balanceVat = b => b ? `${b > 0 ? 'אלון חייב לי' : 'אני חייב לאלון'} ${money(withVat(Math.abs(b)))}
+  <div class="hint">כולל מע"מ · ${money(Math.abs(b))} לפני מע"מ</div>` : 'אין יתרה';
+// העברה עם אלון שסומנה "כולל מע"מ" נספרת ביתרה לפני מע"מ
+const netOfVat = a => a.vatIncluded ? round2(a.amount / (1 + VAT)) : a.amount;
 const balanceClass = b => b > 0 ? 'income' : b < 0 ? 'expense' : '';
 const projectYear = p => (p.startDate || '').slice(0, 4);
 
@@ -445,7 +454,7 @@ function renderProjects(owner) {
     sec.querySelector('.aMine').textContent = money(sum(stats, o => o.s.mine));
     const bal = sum(stats, o => o.s.balance);
     const el = sec.querySelector('.aBalance');
-    el.textContent = balanceText(bal); el.className = 'value aBalance ' + balanceClass(bal);
+    el.innerHTML = balanceVat(bal); el.className = 'value aBalance ' + balanceClass(bal);
   }
   const q = sec.querySelector('.pSearch').value.trim().toLowerCase(), st = sec.querySelector('.pStatus').value;
   const list = all.filter(x => (!st || (x.status || 'open') === st) && (!q || [x.name, x.client].join(' ').toLowerCase().includes(q))).sort(byName);
@@ -466,7 +475,7 @@ function renderProjects(owner) {
       <td class="num expense"><b>${money(tot('expenses'))}</b></td>
       <td class="num ${signClass(totProfit)}"><b>${money(totProfit)}</b></td>
       ${alon ? `<td class="num ${signClass(totMine)}" style="font-size:16px"><b>${money(totMine)}</b></td>
-        <td class="${balanceClass(totBalance) || 'muted'}"><b>${balanceText(totBalance)}</b></td>` : ''}
+        <td class="${balanceClass(totBalance) || 'muted'}"><b>${balanceVat(totBalance)}</b></td>` : ''}
       <td></td>
     </tr>`;
   t.innerHTML = `<tr><th>שם הפרוייקט</th><th>לקוח</th><th>נפתח</th><th>התקבל</th><th>נשאר לגבות</th><th>הוצאות</th><th>${alon ? 'רווח' : 'הרווח שלי'}</th>
@@ -481,7 +490,7 @@ function renderProjects(owner) {
         <td class="num expense">${money(s.expenses)}</td>
         <td class="num ${signClass(s.profit)}"><b>${money(s.profit)}</b></td>
         ${alon ? `<td class="num income">${money(s.mine)}</td>
-          <td class="${balanceClass(s.balance) || 'muted'}">${s.paidOff ? 'שולם הכל' : balanceText(s.balance)}</td>` : ''}
+          <td class="${balanceClass(s.balance) || 'muted'}">${s.paidOff ? 'שולם הכל' : balanceVat(s.balance)}</td>` : ''}
         <td><span class="badge ${x.status === 'closed' ? '' : 'open'}">${x.status === 'closed' ? 'סגור' : 'פתוח'}</span></td>
       </tr>`;
     }).join('') + totalRow;
@@ -543,7 +552,7 @@ function renderProjectDetail(p, el) {
       ${stat('רווח' + (alon ? ' משותף' : ''), money(s.profit), signClass(s.profit))}
       ${stat('נשאר לשלם לעוקבים ומדובבים', money(s.unpaid), s.unpaid > 0 ? 'expense' : '')}
       ${alon ? stat(`החלק שלי (${p.split ?? 50}%)`, money(s.mine), signClass(s.mine)) + stat('החלק של אלון', money(s.alonShare))
-        + stat('יתרה מול אלון', balanceText(s.balance), balanceClass(s.balance)) : ''}
+        + stat('יתרה מול אלון (כולל מע"מ)', balanceVat(s.balance), balanceClass(s.balance)) : ''}
     </div>
     ${alon ? `<div class="card">
       <div class="toolbar"><h2 style="font-size:17px">תשלומים מאלון אליי</h2>
@@ -552,14 +561,14 @@ function renderProjectDetail(p, el) {
         <tr><th>מתי שולם</th><th>סכום</th><th>כיוון</th><th>הערה</th><th></th></tr>
         ${s.transfers.map(a => `<tr>
           <td>${fmtDate(a.date)}</td>
-          <td class="num"><b>${money(a.amount)}</b></td>
+          <td class="num"><b>${money(a.amount)}</b> <span class="hint">${a.vatIncluded ? 'כולל מע"מ' : 'בלי מע"מ'}</span></td>
           <td>${a.direction === 'toAlon' ? 'אני העברתי לאלון' : 'אלון העביר לי'}</td>
           <td class="wrap">${esc(a.note)}</td>
           <td><button class="link" onclick="openActivity('${p.id}','settlement','${a.id}')">עריכה</button>
               <button class="link danger" onclick="delActivity('${a.id}')">מחיקה</button></td>
         </tr>`).join('')}
       </table></div>` : '<p class="muted" style="margin:0">אלון עוד לא העביר תשלום בפרוייקט הזה.</p>'}
-      <p style="margin:10px 0 0;font-weight:600">אלון העביר לי עד כה ${money(s.fromAlon)} · <span class="${balanceClass(s.balance)}">${s.balance ? balanceText(s.balance) : 'אין יתרה – שולם הכל'}</span></p>
+      <p style="margin:10px 0 0;font-weight:600">אלון העביר לי עד כה ${money(s.fromAlonGross)} · <span class="${balanceClass(s.balance)}">${s.balance ? balanceVat(s.balance) : 'אין יתרה – שולם הכל'}</span></p>
       ${s.legacySettled ? `<p class="hint" style="margin-top:6px">הפרוייקט סומן בעבר "התחשבנו", ולכן היתרה מוצגת כאפס.
         <button class="link" onclick="setSettled('${p.id}', false)">ביטול הסימון</button> – כדי לרשום את התשלומים מאלון בפועל.</p>` : ''}
     </div>` : ''}
@@ -680,11 +689,8 @@ function openActivity(projectId, kind, id, payee) {
   e.received.value = isReceived(a) ? 'yes' : 'no';
   e.deal.value = p.price ?? '';
   e.direction.value = a.direction || 'fromAlon';
-  if (!id && kind === 'settlement') { // תשלום חדש מאלון – ממולא ביתרה הפתוחה
-    const b = projectStats(p).balance;
-    e.direction.value = b < 0 ? 'toAlon' : 'fromAlon';
-    e.amount.value = b ? Math.abs(b) : '';
-  }
+  e.vatIncluded.value = id ? (a.vatIncluded ? 'yes' : 'no') : 'yes';
+  if (!id && kind === 'settlement') fillSettlement(p); // תשלום חדש מאלון – ממולא ביתרה הפתוחה
   e.installments.value = 1;
   e.interval.value = 'month';
   document.getElementById('actTitle').textContent = (id ? 'עריכת פעילות – ' : '') + p.name;
@@ -693,6 +699,15 @@ function openActivity(projectId, kind, id, payee) {
   if (!id && payee) fillRemaining();
   actDlg.showModal();
 }
+// ממלא את ההעברה ביתרה הפתוחה מול אלון, כולל או בלי מע"מ לפי הבחירה
+function fillSettlement(p) {
+  const e = actForm.elements, b = projectStats(p).balance;
+  e.direction.value = b < 0 ? 'toAlon' : 'fromAlon';
+  e.amount.value = b ? (e.vatIncluded.value === 'yes' ? withVat(Math.abs(b)) : Math.abs(b)) : '';
+}
+actForm.elements.vatIncluded.onchange = () => {
+  if (!actCtx.id) fillSettlement(db.projects.find(p => p.id === actCtx.projectId));
+};
 function openPayment(projectId, i) {
   const x = projectStats(db.projects.find(p => p.id === projectId)).people[i];
   openActivity(projectId, 'payment', null, x.role + '|' + x.name);
@@ -718,6 +733,7 @@ function setKind(kind, people) {
   document.getElementById('paidByField').hidden = actCtx.owner !== 'alon' || !MONEY_KINDS.includes(kind);
   document.getElementById('settleKind').hidden = actCtx.owner !== 'alon';
   document.getElementById('directionField').hidden = kind !== 'settlement';
+  document.getElementById('vatField').hidden = kind !== 'settlement';
   if (kind === 'settlement') document.getElementById('amountLabel').textContent = 'סכום ששולם (₪) *';
   const payment = kind === 'payment', payee = actForm.elements.payee;
   document.getElementById('payeeField').hidden = !payment;
@@ -869,6 +885,7 @@ actForm.onsubmit = function (ev) {
   }
   if (kind === 'settlement') {
     data.direction = e.direction.value;
+    data.vatIncluded = e.vatIncluded.value === 'yes';
     // תשלום חדש מאלון – הפרוייקט ייסגר שוב אוטומטית כשהיתרה מתאפסת (גם אם נפתח ידנית קודם)
     col('projects').doc(actCtx.projectId).set({ autoClosed: false }, { merge: true }).catch(fail);
   }
@@ -915,7 +932,7 @@ function renderDash() {
   document.getElementById('sExpense').textContent = money(exp);
   const sa = document.getElementById('sAlon'); sa.textContent = money(alonMine); sa.className = 'value ' + signClass(alonMine);
   const sp = document.getElementById('sProfit'); sp.textContent = money(total); sp.className = 'value ' + signClass(total);
-  const sb = document.getElementById('sBalance'); sb.textContent = balanceText(balance); sb.className = 'value ' + balanceClass(balance);
+  const sb = document.getElementById('sBalance'); sb.innerHTML = balanceVat(balance); sb.className = 'value ' + balanceClass(balance);
 
   const m = MONTHS.map(() => ({ in: 0, out: 0 }));
   flows.forEach(f => m[+f.date.slice(5, 7) - 1][f.in ? 'in' : 'out'] += f.amount);
