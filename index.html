@@ -311,14 +311,24 @@ auth.onAuthStateChanged(u => {
     db[name] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     loaded.add(name);
     if (loaded.size === COLLECTIONS.length) { show('app'); renderAll(); }
-  }, err => alert('שגיאה בטעינת הנתונים: ' + err.message))));
+  }, err => {
+    if (err.code === 'permission-denied') { // חשבון Google שאינו של רונן
+      alert('לחשבון ' + (u.email || '') + ' אין הרשאה למערכת.');
+      document.getElementById('logoutBtn').onclick();
+    } else alert('שגיאה בטעינת הנתונים: ' + err.message);
+  })));
 });
 document.getElementById('loginBtn').onclick = () => {
   document.getElementById('loginErr').textContent = '';
   auth.signInWithPopup(new firebase.auth.GoogleAuthProvider())
     .catch(e => document.getElementById('loginErr').textContent = 'ההתחברות נכשלה: ' + e.message);
 };
-document.getElementById('logoutBtn').onclick = () => auth.signOut();
+// ביציאה מוחקים גם את העותק המקומי של הנתונים (שנשמר לעבודה בלי אינטרנט), כדי שלא יישאר במחשב משותף
+document.getElementById('logoutBtn').onclick = async () => {
+  unsub.forEach(f => f()); unsub = [];
+  try { await auth.signOut(); await fs.terminate(); await fs.clearPersistence(); } catch (e) {}
+  location.reload();
+};
 
 // כתיבה של הרבה מסמכים במנות (מגבלת Firestore: 500 פעולות למנה)
 async function commitOps(ops) {
@@ -330,14 +340,17 @@ async function commitOps(ops) {
 }
 
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-const money = n => '₪' + (n || 0).toLocaleString('he-IL', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+// כל ערך שמגיע מהנתונים עובר דרך אחת הפונקציות האלה לפני שהוא נכנס ל-HTML
+const toNum = n => Number.isFinite(Number(n)) ? Number(n) : 0;
+const money = n => '₪' + toNum(n).toLocaleString('he-IL', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const fmtDate = d => d ? d.split('-').reverse().join('/') : '';
+const js = v => esc(JSON.stringify(String(v ?? ''))); // ערך בתוך onclick="..."
+const fmtDate = d => d ? esc(String(d).split('-').reverse().join('/')) : '';
 const today = () => new Date().toISOString().slice(0, 10);
 const round2 = n => Math.round(n * 100) / 100;
 const num = el => parseFloat(el.value) || 0;
 const optNum = el => el.value === '' ? null : num(el);
-const sum = (list, f) => round2(list.reduce((s, x) => s + (f(x) || 0), 0));
+const sum = (list, f) => round2(list.reduce((s, x) => s + toNum(f(x)), 0));
 const byName = (a, b) => a.name.localeCompare(b.name, 'he');
 const signClass = n => n >= 0 ? 'income' : 'expense';
 const custName = id => db.customers.find(c => c.id === id)?.name || ''; // לקוחות מהגרסה הקודמת
@@ -371,7 +384,7 @@ function projectStats(p) {
   s.people = projectPeople(acts);
   s.unpaid = sum(s.people, x => x.remaining);
   if (p.owner === 'alon') {
-    s.mine = round2(s.profit * (p.split ?? 50) / 100);
+    s.mine = round2(s.profit * toNum(p.split ?? 50) / 100);
     s.alonShare = round2(s.profit - s.mine);
     s.transfers = acts.filter(a => a.kind === 'settlement').sort((a, b) => a.date.localeCompare(b.date));
     const dir = a => a.direction === 'toAlon' ? -1 : 1;
@@ -417,7 +430,7 @@ function buildProjectSection(owner) {
         <h2>${OWNERS[owner]}</h2>
         <input class="pSearch" placeholder="חיפוש פרוייקט או לקוח...">
         <select class="pStatus"><option value="">כל הפרוייקטים</option><option value="open">פתוחים</option><option value="closed">סגורים</option></select>
-        <button class="btn primary" onclick="openProjectForm('${owner}')">+ פרוייקט חדש</button>
+        <button class="btn primary" onclick="openProjectForm(${js(owner)})">+ פרוייקט חדש</button>
       </div>
       ${owner === 'alon' ? `
       <p class="muted" style="margin-top:0">בסוף כל פרוייקט מתחלקים ברווח אחרי הוצאות. בכל תקבול ותשלום מסמנים אצל מי הכסף – אצלי או אצל אלון.</p>
@@ -480,7 +493,7 @@ function renderProjects(owner) {
   t.innerHTML = `<tr><th>שם הפרוייקט</th><th>לקוח</th><th>נפתח</th><th>התקבל</th><th>נשאר לגבות</th><th>הוצאות</th><th>${alon ? 'רווח' : 'הרווח שלי'}</th>
     ${alon ? '<th>החלק שלי</th><th>אלון חייב לי (כולל מע"מ)</th>' : ''}<th>סטטוס</th></tr>` +
     rows.map(({ x, s }) => {
-      return `<tr class="click" onclick="showProject('${owner}','${x.id}')">
+      return `<tr class="click" onclick="showProject(${js(owner)},${js(x.id)})">
         <td><b>${esc(x.name)}</b></td>
         <td>${esc(x.client)}</td>
         <td>${fmtDate(x.startDate)}</td>
@@ -509,12 +522,12 @@ function activityDetail(a, s, p) {
     return `<div style="margin-bottom:6px"><b>${esc(x.name)}</b> – סוכם ${money(x.cost)}
       <div class="hint">${paid.length ? paid.map(a => 'שולם ' + paymentsText([a], p.owner === 'alon')).join('<br>') : 'עוד לא שולם'}
         <br>${o.remaining > 0 ? `<span class="expense">נשאר ${money(o.remaining)}</span>` : 'שולם הכל'}
-        ${o.remaining > 0 ? ` <button class="link" onclick="openPayment('${p.id}', ${i})">+ תשלום</button>` : ''}</div></div>`;
+        ${o.remaining > 0 ? ` <button class="link" onclick="openPayment(${js(p.id)}, ${i})">+ תשלום</button>` : ''}</div></div>`;
   }).join('') + (a.note ? esc(a.note) : '');
   if (a.kind === 'income') return [!isReceived(a) && '<span class="expense">צפוי – עוד לא התקבל</span>', a.note && esc(a.note)].filter(Boolean).join('<br>');
   if (a.kind === 'payment') return `ל${esc(a.payee)} (${ROLE[a.payeeRole] || ''})` + (a.note ? '<br>' + esc(a.note) : '');
   const people = (a.people || []).map(x => {
-    const parts = [x.hours != null && `${x.hours} שעות`, x.km != null && `${x.km} ק"מ`].filter(Boolean).join(', ');
+    const parts = [x.hours != null && `${toNum(x.hours)} שעות`, x.km != null && `${toNum(x.km)} ק"מ`].filter(Boolean).join(', ');
     return `${esc(x.name)}${parts ? ` (${parts})` : ''} – ${money(x.cost)}`;
   });
   return people.concat(a.note ? [esc(a.note)] : []).join('<br>');
@@ -526,20 +539,20 @@ function renderProjectDetail(p, el) {
   const acts = [...s.acts].sort((a, b) => b.date.localeCompare(a.date));
   const stat = (label, value, cls = '') => `<div class="card stat"><div class="label">${label}</div><div class="value ${cls}">${value}</div></div>`;
   el.innerHTML = `
-    <div class="toolbar"><button class="btn" onclick="showProject('${p.owner}', null)">חזרה לרשימה</button></div>
+    <div class="toolbar"><button class="btn" onclick="showProject(${js(p.owner)}, null)">חזרה לרשימה</button></div>
     <div class="card">
       <div class="toolbar">
         <h2>${esc(p.name)}</h2>
         <span class="badge ${p.status === 'closed' ? '' : 'open'}">${p.status === 'closed' ? 'סגור' : 'פתוח'}</span>
-        <button class="link" onclick="openProjectForm('${p.owner}','${p.id}')">עריכה</button>
-        <button class="link danger" onclick="delProject('${p.id}')">מחיקה</button>
+        <button class="link" onclick="openProjectForm(${js(p.owner)},${js(p.id)})">עריכה</button>
+        <button class="link danger" onclick="delProject(${js(p.id)})">מחיקה</button>
       </div>
       <div class="muted">${[p.client && 'לקוח: ' + esc(p.client), p.startDate && 'נפתח: ' + fmtDate(p.startDate),
-        alon && `עם אלון קציר · החלק שלי ${p.split ?? 50}%`].filter(Boolean).join(' · ')}</div>
+        alon && `עם אלון קציר · החלק שלי ${toNum(p.split ?? 50)}%`].filter(Boolean).join(' · ')}</div>
       ${p.notes ? `<p style="margin-bottom:0">${esc(p.notes)}</p>` : ''}
     </div>
     <div class="toolbar">
-      ${Object.entries(KINDS).filter(([k]) => k !== 'settlement').map(([k, l]) => `<button class="btn primary" onclick="openActivity('${p.id}','${k}')">+ ${l}</button>`).join('')}
+      ${Object.entries(KINDS).filter(([k]) => k !== 'settlement').map(([k, l]) => `<button class="btn primary" onclick="openActivity(${js(p.id)},${js(k)})">+ ${l}</button>`).join('')}
     </div>
     <div class="stats">
       ${p.price != null ? stat('המחיר שסוכם', money(p.price)) : ''}
@@ -550,12 +563,12 @@ function renderProjectDetail(p, el) {
       ${stat('הוצאות אחרות', money(s.other), 'expense')}
       ${stat('רווח' + (alon ? ' משותף' : ''), money(s.profit), signClass(s.profit))}
       ${stat('נשאר לשלם לעוקבים ומדובבים', money(s.unpaid), s.unpaid > 0 ? 'expense' : '')}
-      ${alon ? stat(`החלק שלי (${p.split ?? 50}%)`, money(s.mine), signClass(s.mine)) + stat('החלק של אלון', money(s.alonShare))
+      ${alon ? stat(`החלק שלי (${toNum(p.split ?? 50)}%)`, money(s.mine), signClass(s.mine)) + stat('החלק של אלון', money(s.alonShare))
         + stat('אלון חייב לי (כולל מע"מ)', balanceVat(s.balance), balanceClass(s.balance)) : ''}
     </div>
     ${alon ? `<div class="card">
       <div class="toolbar"><h2 style="font-size:17px">תשלומים מאלון אליי</h2>
-        <button class="btn primary" onclick="openActivity('${p.id}','settlement')">+ תשלום מאלון אליי</button></div>
+        <button class="btn primary" onclick="openActivity(${js(p.id)},'settlement')">+ תשלום מאלון אליי</button></div>
       ${s.transfers.length ? `<div class="table-wrap"><table>
         <tr><th>מתי שולם</th><th>סכום</th><th>כיוון</th><th>הערה</th><th></th></tr>
         ${s.transfers.map(a => `<tr>
@@ -563,26 +576,26 @@ function renderProjectDetail(p, el) {
           <td class="num"><b>${money(a.amount)}</b> <span class="hint">${a.vatIncluded ? 'כולל מע"מ' : 'בלי מע"מ'}</span></td>
           <td>${a.direction === 'toAlon' ? 'אני העברתי לאלון' : 'אלון העביר לי'}</td>
           <td class="wrap">${esc(a.note)}</td>
-          <td><button class="link" onclick="openActivity('${p.id}','settlement','${a.id}')">עריכה</button>
-              <button class="link danger" onclick="delActivity('${a.id}')">מחיקה</button></td>
+          <td><button class="link" onclick="openActivity(${js(p.id)},'settlement',${js(a.id)})">עריכה</button>
+              <button class="link danger" onclick="delActivity(${js(a.id)})">מחיקה</button></td>
         </tr>`).join('')}
       </table></div>` : '<p class="muted" style="margin:0">אלון עוד לא העביר תשלום בפרוייקט הזה.</p>'}
       <p style="margin:10px 0 0;font-weight:600">אלון העביר לי עד כה ${money(s.fromAlonGross)} · <span class="${balanceClass(s.balance)}">${s.balance ? 'אלון חייב לי (כולל מע"מ): ' + balanceVat(s.balance) : 'אין יתרה – שולם הכל'}</span></p>
       ${s.legacySettled ? `<p class="hint" style="margin-top:6px">הפרוייקט סומן בעבר "התחשבנו", ולכן היתרה מוצגת כאפס.
-        <button class="link" onclick="setSettled('${p.id}', false)">ביטול הסימון</button> – כדי לרשום את התשלומים מאלון בפועל.</p>` : ''}
+        <button class="link" onclick="setSettled(${js(p.id)}, false)">ביטול הסימון</button> – כדי לרשום את התשלומים מאלון בפועל.</p>` : ''}
     </div>` : ''}
     <div class="card">
       <div class="toolbar"><h2 style="font-size:17px">תשלומים מהלקוח</h2>
-        <button class="link" onclick="openActivity('${p.id}','income')">+ תשלום מהלקוח</button></div>
+        <button class="link" onclick="openActivity(${js(p.id)},'income')">+ תשלום מהלקוח</button></div>
       ${s.clientPayments.length ? `<div class="table-wrap"><table>
         <tr><th>תאריך</th><th>סכום</th><th>סטטוס</th>${alon ? '<th>מי קיבל</th>' : ''}<th>הערה</th><th></th></tr>
         ${s.clientPayments.map(a => `<tr>
           <td>${fmtDate(a.date)}</td>
           <td class="num ${isReceived(a) ? 'income' : ''}"><b>${money(a.amount)}</b></td>
-          <td>${isReceived(a) ? '<span class="income">התקבל</span>' : `<span class="expense">צפוי</span> <button class="link" onclick="setReceived('${a.id}', true)">סמן שהתקבל</button>`}</td>
+          <td>${isReceived(a) ? '<span class="income">התקבל</span>' : `<span class="expense">צפוי</span> <button class="link" onclick="setReceived(${js(a.id)}, true)">סמן שהתקבל</button>`}</td>
           ${alon ? `<td>${a.paidBy === 'me' ? 'אני' : 'אלון'}</td>` : ''}
           <td class="wrap">${esc(a.note)}</td>
-          <td><button class="link" onclick="openActivity('${p.id}','income','${a.id}')">עריכה</button></td>
+          <td><button class="link" onclick="openActivity(${js(p.id)},'income',${js(a.id)})">עריכה</button></td>
         </tr>`).join('')}
       </table></div>` : '<p class="muted" style="margin:0">עדיין אין תשלומים מהלקוח. אפשר לרשום תשלום אחד או לפרוס לכמה תשלומים.</p>'}
       <p style="margin:10px 0 0;font-weight:600">התקבל <span class="income">${money(s.income)}</span>
@@ -601,7 +614,7 @@ function renderProjectDetail(p, el) {
           <td class="wrap" style="font-size:13px">${paymentsTo(s.acts, x.role, x.name).map(a => paymentsText([a], alon)).join('<br>') || '<span class="muted">–</span>'}</td>
           <td class="num ${x.remaining > 0 ? 'expense' : x.remaining < 0 ? 'income' : 'muted'}"><b>${x.remaining ? money(x.remaining) : 'שולם הכל'}</b></td>
           <td class="num ${x.remaining > 0 ? 'expense' : 'muted'}">${x.remaining > 0 ? `<b>${money(withVat(x.remaining))}</b>` : '–'}</td>
-          <td><button class="link" onclick="openPayment('${p.id}', ${i})">+ תשלום</button></td>
+          <td><button class="link" onclick="openPayment(${js(p.id)}, ${i})">+ תשלום</button></td>
         </tr>`).join('')}
       </table></div></div>` : ''}
     <div class="card"><h3 style="margin-top:0">כל הפעילות</h3><div class="table-wrap"><table>${acts.length
@@ -611,8 +624,8 @@ function renderProjectDetail(p, el) {
           <td class="wrap">${activityDetail(a, s, p)}</td>
           <td class="num ${kindClass(a.kind)}">${money(a.amount)}</td>
           ${alon ? `<td>${MONEY_KINDS.includes(a.kind) ? `${a.kind === 'income' ? 'קיבל' : 'שילם'}: ${a.paidBy === 'me' ? 'אני' : 'אלון'}` : '<span class="muted">–</span>'}</td>` : ''}
-          <td><button class="link" onclick="openActivity('${p.id}','${a.kind}','${a.id}')">עריכה</button>
-              <button class="link danger" onclick="delActivity('${a.id}')">מחיקה</button></td>
+          <td><button class="link" onclick="openActivity(${js(p.id)},${js(a.kind)},${js(a.id)})">עריכה</button>
+              <button class="link danger" onclick="delActivity(${js(a.id)})">מחיקה</button></td>
         </tr>`).join('')
       : '<tr><td class="empty">עדיין אין פעילות בפרוייקט. הוסיפו תקבול מהלקוח, משמרת מעקב, מדובבים או הוצאה אחרת.</td></tr>'}
     </table></div>
@@ -912,7 +925,7 @@ function renderDash() {
   const years = [...new Set([...db.activities.map(a => a.date), ...db.transactions.map(t => t.date), ...db.projects.map(p => p.startDate)]
     .filter(Boolean).map(d => d.slice(0, 4)).concat(String(new Date().getFullYear())))].sort().reverse();
   const cur = sel.value || years[0];
-  sel.innerHTML = years.map(y => `<option ${y === cur ? 'selected' : ''}>${y}</option>`).join('');
+  sel.innerHTML = years.map(y => `<option ${y === cur ? 'selected' : ''}>${esc(y)}</option>`).join('');
 
   // הכנסות והוצאות: פעילויות בפרוייקטים שלי + כללי, לפי תאריך הפעילות
   const owner = id => db.projects.find(p => p.id === id)?.owner;
@@ -949,7 +962,7 @@ function renderDash() {
   document.getElementById('dashProjects').innerHTML = list.length
     ? '<tr><th>שם הפרוייקט</th><th>של מי</th><th>לקוח</th><th>התקבל</th><th>הוצאות</th><th>רווח</th><th>הרווח שלי</th></tr>' + list.map(p => {
         const s = projectStats(p);
-        return `<tr class="click" onclick="showProject('${p.owner}','${p.id}')">
+        return `<tr class="click" onclick="showProject(${js(p.owner)},${js(p.id)})">
           <td><b>${esc(p.name)}</b></td>
           <td>${p.owner === 'alon' ? 'עם אלון' : 'שלי'}</td>
           <td>${esc(p.client)}</td>
@@ -989,8 +1002,8 @@ function renderTx() {
       <td class="num ${x.type}">${money(x.amount)}</td>
       <td>${esc(txParty(x))}</td>
       <td class="wrap">${esc(txDesc(x))}</td>
-      <td><button class="link" onclick="openTx('${x.type}','${x.id}')">עריכה</button>
-          <button class="link danger" onclick="delTx('${x.id}')">מחיקה</button></td>
+      <td><button class="link" onclick="openTx(${js(x.type)},${js(x.id)})">עריכה</button>
+          <button class="link danger" onclick="delTx(${js(x.id)})">מחיקה</button></td>
     </tr>`).join('');
   const inc = sum(list.filter(x => x.type === 'income'), x => x.amount), exp = sum(list.filter(x => x.type === 'expense'), x => x.amount);
   document.getElementById('txTotals').innerHTML =
