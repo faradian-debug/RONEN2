@@ -435,7 +435,8 @@ function buildProjectSection(owner) {
       ${owner === 'alon' ? `
       <p class="muted" style="margin-top:0">בסוף כל פרוייקט מתחלקים ברווח אחרי הוצאות. בכל תקבול ותשלום מסמנים אצל מי הכסף – אצלי או אצל אלון.</p>
       <div class="stats">
-        <div class="card stat"><div class="label">החלק שלי – כל הפרוייקטים</div><div class="value income aMine"></div></div>
+        <div class="card stat"><div class="label">החלק שלי – כל הפרוייקטים (ללא מע"מ)</div><div class="value income aMine"></div></div>
+        <div class="card stat"><div class="label">אלון שילם לי עד כה – כל הפרוייקטים</div><div class="value aPaid"></div></div>
         <div class="card stat"><div class="label">אלון חייב לי – כל הפרוייקטים (כולל מע"מ)</div><div class="value aBalance" style="font-size:18px"></div></div>
       </div>` : ''}
       <div class="card"><div class="table-wrap"><table class="pTable"></table></div></div>
@@ -464,6 +465,8 @@ function renderProjects(owner) {
   if (owner === 'alon') {
     const stats = all.map(x => ({ x, s: projectStats(x) }));
     sec.querySelector('.aMine').textContent = money(sum(stats, o => o.s.mine));
+    // כפי שהועבר בפועל (כולל מע"מ אם התשלום סומן כך), נטו אחרי העברות ממני לאלון
+    sec.querySelector('.aPaid').textContent = money(sum(stats, o => o.s.fromAlonGross));
     const bal = sum(stats, o => o.s.balance);
     const el = sec.querySelector('.aBalance');
     el.innerHTML = balanceVat(bal); el.className = 'value aBalance ' + balanceClass(bal);
@@ -491,7 +494,7 @@ function renderProjects(owner) {
       <td></td>
     </tr>`;
   t.innerHTML = `<tr><th>שם הפרוייקט</th><th>לקוח</th><th>נפתח</th><th>התקבל</th><th>נשאר לגבות</th><th>הוצאות</th><th>${alon ? 'רווח' : 'הרווח שלי'}</th>
-    ${alon ? '<th>החלק שלי</th><th>אלון חייב לי (כולל מע"מ)</th>' : ''}<th>סטטוס</th></tr>` +
+    ${alon ? '<th>החלק שלי (ללא מע"מ)</th><th>אלון חייב לי (כולל מע"מ)</th>' : ''}<th>סטטוס</th></tr>` +
     rows.map(({ x, s }) => {
       return `<tr class="click" onclick="showProject(${js(owner)},${js(x.id)})">
         <td><b>${esc(x.name)}</b></td>
@@ -563,7 +566,7 @@ function renderProjectDetail(p, el) {
       ${stat('הוצאות אחרות', money(s.other), 'expense')}
       ${stat('רווח' + (alon ? ' משותף' : ''), money(s.profit), signClass(s.profit))}
       ${stat('נשאר לשלם לעוקבים ומדובבים', money(s.unpaid), s.unpaid > 0 ? 'expense' : '')}
-      ${alon ? stat(`החלק שלי (${toNum(p.split ?? 50)}%)`, money(s.mine), signClass(s.mine)) + stat('החלק של אלון', money(s.alonShare))
+      ${alon ? stat(`החלק שלי (${toNum(p.split ?? 50)}%, ללא מע"מ)`, money(s.mine), signClass(s.mine)) + stat('החלק של אלון', money(s.alonShare))
         + stat('אלון חייב לי (כולל מע"מ)', balanceVat(s.balance), balanceClass(s.balance)) : ''}
     </div>
     ${alon ? `<div class="card">
