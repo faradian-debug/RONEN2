@@ -352,6 +352,8 @@ const num = el => parseFloat(el.value) || 0;
 const optNum = el => el.value === '' ? null : num(el);
 const sum = (list, f) => round2(list.reduce((s, x) => s + toNum(f(x)), 0));
 const byName = (a, b) => a.name.localeCompare(b.name, 'he');
+// פרוייקט שנפתח אחרון – ראשון ברשימה; באותו תאריך לפי שם
+const byNewest = (a, b) => (b.startDate || '').localeCompare(a.startDate || '') || byName(a, b);
 const signClass = n => n >= 0 ? 'income' : 'expense';
 const custName = id => db.customers.find(c => c.id === id)?.name || ''; // לקוחות מהגרסה הקודמת
 
@@ -472,7 +474,7 @@ function renderProjects(owner) {
     el.innerHTML = balanceVat(bal); el.className = 'value aBalance ' + balanceClass(bal);
   }
   const q = sec.querySelector('.pSearch').value.trim().toLowerCase(), st = sec.querySelector('.pStatus').value;
-  const list = all.filter(x => (!st || (x.status || 'open') === st) && (!q || [x.name, x.client].join(' ').toLowerCase().includes(q))).sort(byName);
+  const list = all.filter(x => (!st || (x.status || 'open') === st) && (!q || [x.name, x.client].join(' ').toLowerCase().includes(q))).sort(byNewest);
   const t = sec.querySelector('.pTable');
   if (!list.length) {
     t.innerHTML = `<tr><td class="empty">${all.length ? 'לא נמצאו פרוייקטים' : 'עדיין אין פרוייקטים. לחצו "+ פרוייקט חדש"'}</td></tr>`;
