@@ -438,6 +438,7 @@ function buildProjectSection(owner) {
       <p class="muted" style="margin-top:0">בסוף כל פרוייקט מתחלקים ברווח אחרי הוצאות. בכל תקבול ותשלום מסמנים אצל מי הכסף – אצלי או אצל אלון.</p>
       <div class="stats">
         <div class="card stat"><div class="label">החלק שלי – כל הפרוייקטים (ללא מע"מ)</div><div class="value income aMine"></div></div>
+        <div class="card stat"><div class="label">החלק שלי – כל הפרוייקטים (כולל מע"מ)</div><div class="value income aMineVat"></div></div>
         <div class="card stat"><div class="label">אלון שילם לי עד כה – כל הפרוייקטים</div><div class="value aPaid"></div></div>
         <div class="card stat"><div class="label">אלון חייב לי – כל הפרוייקטים (כולל מע"מ)</div><div class="value aBalance" style="font-size:18px"></div></div>
       </div>` : ''}
@@ -466,7 +467,9 @@ function renderProjects(owner) {
   const all = db.projects.filter(x => x.owner === owner);
   if (owner === 'alon') {
     const stats = all.map(x => ({ x, s: projectStats(x) }));
-    sec.querySelector('.aMine').textContent = money(sum(stats, o => o.s.mine));
+    const mineTotal = sum(stats, o => o.s.mine);
+    sec.querySelector('.aMine').textContent = money(mineTotal);
+    sec.querySelector('.aMineVat').textContent = money(withVat(mineTotal));
     // כפי שהועבר בפועל (כולל מע"מ אם התשלום סומן כך), נטו אחרי העברות ממני לאלון
     sec.querySelector('.aPaid').textContent = money(sum(stats, o => o.s.fromAlonGross));
     const bal = sum(stats, o => o.s.balance);
