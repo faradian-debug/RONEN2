@@ -245,6 +245,7 @@
     <div class="actions">
       <button class="btn primary" value="save">שמירה</button>
       <button class="btn" value="cancel" formnovalidate>ביטול</button>
+      <button type="button" class="btn" id="actDelete" style="margin-inline-start:auto;color:var(--expense)">מחיקה</button>
     </div>
   </form>
 </dialog>
@@ -520,6 +521,8 @@ function renderProjects(owner) {
 // התשלומים בפועל לעובד בפרוייקט, לפי תאריך
 const paymentsTo = (acts, role, name) => acts.filter(a => a.kind === 'payment' && a.payeeRole === role && a.payee === name)
   .sort((a, b) => a.date.localeCompare(b.date));
+// כפתור עריכה ליד תשלום לעובד – פותח את התשלום לתיקון (סכום, תאריך, למי) או למחיקה
+const editPaymentBtn = (p, a) => ` <button class="link" style="font-size:13px" onclick="openActivity(${js(p.id)},'payment',${js(a.id)})">עריכה</button>`;
 const paymentsText = (list, alon) => list.map(a => `${fmtDate(a.date)} ${money(a.amount)}${alon ? ` (${a.paidBy === 'me' ? 'אני' : 'אלון'})` : ''}`).join(' · ');
 
 function activityDetail(a, s, p) {
@@ -528,7 +531,7 @@ function activityDetail(a, s, p) {
     const i = s.people.findIndex(o => o.role === 'elicitor' && o.name === x.name), o = s.people[i];
     const paid = paymentsTo(s.acts, 'elicitor', x.name);
     return `<div style="margin-bottom:6px"><b>${esc(x.name)}</b> – סוכם ${money(x.cost)}
-      <div class="hint">${paid.length ? paid.map(a => 'שולם ' + paymentsText([a], p.owner === 'alon')).join('<br>') : 'עוד לא שולם'}
+      <div class="hint">${paid.length ? paid.map(a => 'שולם ' + paymentsText([a], p.owner === 'alon') + editPaymentBtn(p, a)).join('<br>') : 'עוד לא שולם'}
         <br>${o.remaining > 0 ? `<span class="expense">נשאר ${money(o.remaining)}</span>` : 'שולם הכל'}
         ${o.remaining > 0 ? ` <button class="link" onclick="openPayment(${js(p.id)}, ${i})">+ תשלום</button>` : ''}</div></div>`;
   }).join('') + (a.note ? esc(a.note) : '');
@@ -619,7 +622,7 @@ function renderProjectDetail(p, el) {
           <td>${ROLE[x.role]}</td>
           <td class="num">${money(x.owed)}</td>
           <td class="num">${money(x.paid)}</td>
-          <td class="wrap" style="font-size:13px">${paymentsTo(s.acts, x.role, x.name).map(a => paymentsText([a], alon)).join('<br>') || '<span class="muted">–</span>'}</td>
+          <td class="wrap" style="font-size:13px">${paymentsTo(s.acts, x.role, x.name).map(a => paymentsText([a], alon) + editPaymentBtn(p, a)).join('<br>') || '<span class="muted">–</span>'}</td>
           <td class="num ${x.remaining > 0 ? 'expense' : x.remaining < 0 ? 'income' : 'muted'}"><b>${x.remaining ? money(x.remaining) : 'שולם הכל'}</b></td>
           <td class="num ${x.remaining > 0 ? 'expense' : 'muted'}">${x.remaining > 0 ? `<b>${money(withVat(x.remaining))}</b>` : '–'}</td>
           <td><button class="link" onclick="openPayment(${js(p.id)}, ${i})">+ תשלום</button></td>
@@ -716,6 +719,7 @@ function openActivity(projectId, kind, id, payee) {
   document.getElementById('actTitle').textContent = (id ? 'עריכת פעילות – ' : '') + p.name;
   actForm.querySelectorAll('input[name=kind]').forEach(r => r.checked = r.value === (a.kind || kind));
   setKind(a.kind || kind, a.people);
+  document.getElementById('actDelete').hidden = !id; // מחיקה רק בעריכה של פעילות קיימת
   if (!id && payee) fillRemaining();
   actDlg.showModal();
 }
@@ -727,6 +731,11 @@ function fillSettlement(p) {
 }
 actForm.elements.vatIncluded.onchange = () => {
   if (!actCtx.id) fillSettlement(db.projects.find(p => p.id === actCtx.projectId));
+};
+document.getElementById('actDelete').onclick = () => {
+  if (!confirm('למחוק את הפעילות?')) return;
+  col('activities').doc(actCtx.id).delete().catch(fail);
+  actDlg.close();
 };
 function openPayment(projectId, i) {
   const x = projectStats(db.projects.find(p => p.id === projectId)).people[i];
