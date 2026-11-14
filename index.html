@@ -393,6 +393,7 @@ function projectStats(p) {
     const dir = a => a.direction === 'toAlon' ? -1 : 1;
     s.fromAlon = sum(s.transfers, a => dir(a) * netOfVat(a)); // מה שאלון העביר לי, לפני מע"מ – לחישוב היתרה
     s.fromAlonGross = sum(s.transfers, a => dir(a) * a.amount); // כפי שהועבר בפועל
+    s.fromAlonVat = sum(s.transfers, a => dir(a) * (a.vatIncluded ? a.amount : withVat(a.amount))); // הכל כולל מע"מ
     const myCash = round2(sum(acts.filter(a => a.paidBy === 'me' && MONEY_KINDS.includes(a.kind) && isReceived(a)), a => a.kind === 'income' ? a.amount : -a.amount) + s.fromAlon);
     s.balance = round2(s.mine - myCash); // חיובי: אלון חייב לי; שלילי: אני חייב לאלון
     // פרוייקט שסומן "התחשבנו" בגרסה הקודמת (לפני שהיו העברות) נחשב מאוזן
@@ -440,7 +441,7 @@ function buildProjectSection(owner) {
       <div class="stats">
         <div class="card stat"><div class="label">החלק שלי – כל הפרוייקטים (ללא מע"מ)</div><div class="value income aMine"></div></div>
         <div class="card stat"><div class="label">החלק שלי – כל הפרוייקטים (כולל מע"מ)</div><div class="value income aMineVat"></div></div>
-        <div class="card stat"><div class="label">אלון שילם לי עד כה – כל הפרוייקטים</div><div class="value aPaid"></div></div>
+        <div class="card stat"><div class="label">אלון שילם לי עד כה – כל הפרוייקטים (כולל מע"מ)</div><div class="value aPaid"></div></div>
         <div class="card stat"><div class="label">אלון חייב לי – כל הפרוייקטים (כולל מע"מ)</div><div class="value aBalance" style="font-size:18px"></div></div>
       </div>` : ''}
       <div class="card"><div class="table-wrap"><table class="pTable"></table></div></div>
@@ -471,8 +472,8 @@ function renderProjects(owner) {
     const mineTotal = sum(stats, o => o.s.mine);
     sec.querySelector('.aMine').textContent = money(mineTotal);
     sec.querySelector('.aMineVat').textContent = money(withVat(mineTotal));
-    // כפי שהועבר בפועל (כולל מע"מ אם התשלום סומן כך), נטו אחרי העברות ממני לאלון
-    sec.querySelector('.aPaid').textContent = money(sum(stats, o => o.s.fromAlonGross));
+    // כולל מע"מ (תשלום שנרשם בלי מע"מ מקבל תוספת 18%), נטו אחרי העברות ממני לאלון
+    sec.querySelector('.aPaid').textContent = money(sum(stats, o => o.s.fromAlonVat));
     const bal = sum(stats, o => o.s.balance);
     const el = sec.querySelector('.aBalance');
     el.innerHTML = balanceVat(bal); el.className = 'value aBalance ' + balanceClass(bal);
@@ -575,7 +576,7 @@ function renderProjectDetail(p, el) {
       ${stat('רווח' + (alon ? ' משותף' : ''), money(s.profit), signClass(s.profit))}
       ${stat('נשאר לשלם לעוקבים ומדובבים', money(s.unpaid), s.unpaid > 0 ? 'expense' : '')}
       ${alon ? stat(`החלק שלי (${toNum(p.split ?? 50)}%, ללא מע"מ)`, money(s.mine), signClass(s.mine)) + stat('החלק של אלון', money(s.alonShare))
-        + stat('אלון שילם על החשבון', money(s.fromAlonGross))
+        + stat('אלון שילם על החשבון (כולל מע"מ)', money(s.fromAlonVat))
         + stat('אלון חייב לי (כולל מע"מ)', balanceVat(s.balance), balanceClass(s.balance)) : ''}
     </div>
     ${alon ? `<div class="card">
