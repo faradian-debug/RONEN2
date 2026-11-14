@@ -575,6 +575,7 @@ function renderProjectDetail(p, el) {
       ${stat('רווח' + (alon ? ' משותף' : ''), money(s.profit), signClass(s.profit))}
       ${stat('נשאר לשלם לעוקבים ומדובבים', money(s.unpaid), s.unpaid > 0 ? 'expense' : '')}
       ${alon ? stat(`החלק שלי (${toNum(p.split ?? 50)}%, ללא מע"מ)`, money(s.mine), signClass(s.mine)) + stat('החלק של אלון', money(s.alonShare))
+        + stat('אלון שילם על החשבון', money(s.fromAlonGross))
         + stat('אלון חייב לי (כולל מע"מ)', balanceVat(s.balance), balanceClass(s.balance)) : ''}
     </div>
     ${alon ? `<div class="card">
