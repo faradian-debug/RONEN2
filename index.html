@@ -459,6 +459,14 @@ function showProject(owner, id) {
   window.scrollTo(0, 0);
 }
 
+// מי עוד לא קיבל את כל הכסף שמגיע לו בפרוייקט, וכמה (שורה לכל עובד)
+const unpaidList = s => {
+  const due = s.people.filter(x => x.remaining > 0);
+  return due.length
+    ? due.map(x => `${esc(x.name)} <span class="expense">${money(x.remaining)}</span>`).join('<br>')
+    : '<span class="muted">–</span>';
+};
+
 function renderProjects(owner) {
   const sec = document.getElementById(owner);
   const p = db.projects.find(x => x.id === openProject[owner]);
@@ -495,12 +503,13 @@ function renderProjects(owner) {
       <td class="num income"><b>${money(tot('income'))}</b></td>
       <td class="num ${tot('toCollect') > 0 ? 'expense' : 'muted'}"><b>${money(tot('toCollect'))}</b></td>
       <td class="num expense"><b>${money(tot('expenses'))}</b></td>
+      <td class="num ${tot('unpaid') > 0 ? 'expense' : 'muted'}"><b>${money(tot('unpaid'))}</b></td>
       <td class="num ${signClass(totProfit)}"><b>${money(totProfit)}</b></td>
       ${alon ? `<td class="num ${signClass(totMine)}" style="font-size:16px"><b>${money(totMine)}</b></td>
         <td class="num ${balanceClass(totBalance) || 'muted'}"><b>${balanceVat(totBalance)}</b></td>` : ''}
       <td></td>
     </tr>`;
-  t.innerHTML = `<tr><th>שם הפרוייקט</th><th>לקוח</th><th>נפתח</th><th>התקבל</th><th>נשאר לגבות</th><th>הוצאות</th><th>${alon ? 'רווח' : 'הרווח שלי'}</th>
+  t.innerHTML = `<tr><th>שם הפרוייקט</th><th>לקוח</th><th>נפתח</th><th>התקבל</th><th>נשאר לגבות</th><th>הוצאות</th><th>נשאר לשלם – למי</th><th>${alon ? 'רווח' : 'הרווח שלי'}</th>
     ${alon ? '<th>החלק שלי (ללא מע"מ)</th><th>אלון חייב לי (כולל מע"מ)</th>' : ''}<th>סטטוס</th></tr>` +
     rows.map(({ x, s }) => {
       return `<tr class="click" onclick="showProject(${js(owner)},${js(x.id)})">
@@ -510,6 +519,7 @@ function renderProjects(owner) {
         <td class="num income">${money(s.income)}</td>
         <td class="num ${s.toCollect > 0 ? 'expense' : 'muted'}">${s.toCollect ? money(s.toCollect) : '–'}</td>
         <td class="num expense">${money(s.expenses)}</td>
+        <td style="font-size:13px">${unpaidList(s)}</td>
         <td class="num ${signClass(s.profit)}"><b>${money(s.profit)}</b></td>
         ${alon ? `<td class="num income">${money(s.mine)}</td>
           <td class="num ${balanceClass(s.balance) || 'muted'}">${balanceVat(s.balance)}</td>` : ''}
