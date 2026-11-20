@@ -506,11 +506,12 @@ function renderProjects(owner) {
       <td class="num ${tot('unpaid') > 0 ? 'expense' : 'muted'}"><b>${money(tot('unpaid'))}</b></td>
       <td class="num ${signClass(totProfit)}"><b>${money(totProfit)}</b></td>
       ${alon ? `<td class="num ${signClass(totMine)}" style="font-size:16px"><b>${money(totMine)}</b></td>
+        <td class="num"><b>${money(tot('fromAlonVat'))}</b></td>
         <td class="num ${balanceClass(totBalance) || 'muted'}"><b>${balanceVat(totBalance)}</b></td>` : ''}
       <td></td>
     </tr>`;
   t.innerHTML = `<tr><th>שם הפרוייקט</th><th>לקוח</th><th>נפתח</th><th>התקבל</th><th>נשאר לגבות</th><th>הוצאות</th><th>נשאר לשלם – למי</th><th>${alon ? 'רווח' : 'הרווח שלי'}</th>
-    ${alon ? '<th>החלק שלי (ללא מע"מ)</th><th>אלון חייב לי (כולל מע"מ)</th>' : ''}<th>סטטוס</th></tr>` +
+    ${alon ? '<th>החלק שלי (ללא מע"מ)</th><th>שולם על החשבון (כולל מע"מ)</th><th>אלון חייב לי (כולל מע"מ)</th>' : ''}<th>סטטוס</th></tr>` +
     rows.map(({ x, s }) => {
       return `<tr class="click" onclick="showProject(${js(owner)},${js(x.id)})">
         <td><b>${esc(x.name)}</b></td>
@@ -522,6 +523,7 @@ function renderProjects(owner) {
         <td style="font-size:13px">${unpaidList(s)}</td>
         <td class="num ${signClass(s.profit)}"><b>${money(s.profit)}</b></td>
         ${alon ? `<td class="num income">${money(s.mine)}</td>
+          <td class="num ${s.fromAlonVat ? '' : 'muted'}">${s.fromAlonVat ? money(s.fromAlonVat) : '–'}</td>
           <td class="num ${balanceClass(s.balance) || 'muted'}">${balanceVat(s.balance)}</td>` : ''}
         <td><span class="badge ${x.status === 'closed' ? '' : 'open'}">${x.status === 'closed' ? 'סגור' : 'פתוח'}</span></td>
       </tr>`;
