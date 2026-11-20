@@ -573,6 +573,7 @@ function renderProjectDetail(p, el) {
       ${stat('עוקבים', money(s.tracking), 'expense')}
       ${stat('מדובבים', money(s.elicitor), 'expense')}
       ${stat('הוצאות אחרות', money(s.other), 'expense')}
+      ${stat('סך כל ההוצאות', money(s.expenses), 'expense')}
       ${stat('רווח' + (alon ? ' משותף' : ''), money(s.profit), signClass(s.profit))}
       ${stat('נשאר לשלם לעוקבים ומדובבים', money(s.unpaid), s.unpaid > 0 ? 'expense' : '')}
       ${alon ? stat(`החלק שלי (${toNum(p.split ?? 50)}%, ללא מע"מ)`, money(s.mine), signClass(s.mine)) + stat('החלק של אלון', money(s.alonShare))
